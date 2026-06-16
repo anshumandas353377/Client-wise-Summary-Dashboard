@@ -6,6 +6,7 @@
 <title>Client Wise Dashboard</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <style>
+
 :root{
   --bg:#f4f6fb;--surface:#fff;--surface2:#f0f3fa;--border:#e2e8f0;
   --text:#1e2535;--text2:#4a5568;--text3:#94a3b8;
@@ -100,10 +101,10 @@ tr:last-child td{border-bottom:none;}
 @keyframes rowSlide{from{opacity:0;transform:translateX(-8px);}to{opacity:1;transform:translateX(0);}}
 @keyframes spin{to{transform:rotate(360deg);}}
 .sec{display:none;}.sec.on{display:block;}
+
 </style>
 </head>
 <body>
-
 <div class="hdr">
   <div class="hdr-top">
     <div class="logo">
@@ -164,10 +165,20 @@ tr:last-child td{border-bottom:none;}
   <div id="s-aov" class="sec"></div>
   <div id="s-mom" class="sec"></div>
 </div>
-
 <script>
-// ── CONFIG ────────────────────────────────────────────────
-const API_URL = 'https://script.google.com/macros/s/AKfycbwspSn3SvCUCHHO6fBisL9LxeoGJTXt5av0whP8PviTzppKLSs4qSuOkc9PwlICSyvH/exec';
+
+// ── CONFIG ─────────────────────────────────────────────────
+// Calls /api/data (Vercel serverless proxy — same origin, zero CORS)
+const API_BASE = '/api/data';
+
+// ── FETCH ────────────────────────────────────────────────────
+async function apiFetch(action) {
+  const r = await fetch(`${API_BASE}?action=${action}`);
+  if (!r.ok) throw new Error(`HTTP ${r.status} for action=${action}`);
+  const j = await r.json();
+  if (j && j.error) throw new Error(j.error);
+  return j;
+}
 
 // ── STATE ─────────────────────────────────────────────────
 let DB   = null;
@@ -179,7 +190,7 @@ const PAL= ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316
 
 // ── Data fetching — JSONP first, plain fetch fallback ────
 // JSONP bypasses CORS entirely (Apps Script must wrap in callback)
-function jsonpFetch(action) {
+function apiFetch(action) {
   return new Promise((resolve, reject) => {
     const cbName = '__cb_' + action + '_' + Date.now();
     const script  = document.createElement('script');
@@ -227,10 +238,10 @@ async function loadData() {
   try {
     // Load all 4 endpoints in parallel via JSONP
     const [meta, summary, wow, mom] = await Promise.all([
-      jsonpFetch('meta'),
-      jsonpFetch('summary'),
-      jsonpFetch('wow'),
-      jsonpFetch('mom')
+      apiFetch('meta'),
+      apiFetch('summary'),
+      apiFetch('wow'),
+      apiFetch('mom')
     ]);
 
     DB = { meta, summary, wow, mom };
@@ -265,12 +276,10 @@ function showError(msg) {
     <div class="err-box">
       <strong>⚠ Could not load data</strong><br>
       ${msg}<br><br>
-      <strong>Steps to fix:</strong><br>
-      <strong>Most likely fix — re-deploy your Apps Script:</strong><br>
-      1. Open Apps Script → <strong>Deploy → New deployment</strong><br>
-      2. Type: <em>Web app</em> · Execute as: <em>Me</em> · Access: <em>Anyone</em><br>
-      3. Copy the new URL and update <code>API_URL</code> in this file<br><br>
-      <em>Note: "Failed to fetch" = CORS blocked. JSONP needs the new Code.gs that wraps responses in a callback.</em>
+      <strong>Check:</strong><br>
+      1. <code>api/data.js</code> is deployed on Vercel<br>
+      2. Apps Script Web App URL in <code>api/data.js</code> is correct<br>
+      3. Apps Script is deployed as: <em>Execute as Me · Access: Anyone</em>
     </div>`;
 }
 
@@ -708,6 +717,7 @@ function renderMom() {
 
 // ── START ─────────────────────────────────────────────────
 loadData();
+
 </script>
 </body>
 </html>
