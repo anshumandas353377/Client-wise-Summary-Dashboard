@@ -6,7 +6,6 @@
 <title>Client Wise Dashboard</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <style>
-/* ── RESET & ROOT ── */
 :root{
   --bg:#f4f6fb;--surface:#fff;--surface2:#f0f3fa;--border:#e2e8f0;
   --text:#1e2535;--text2:#4a5568;--text3:#94a3b8;
@@ -16,7 +15,6 @@
 }
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:var(--bg);color:var(--text);font-size:13px;}
-/* ── HEADER ── */
 .hdr{background:var(--surface);border-bottom:1px solid var(--border);padding:0 20px;position:sticky;top:0;z-index:200;box-shadow:var(--sh);}
 .hdr-top{display:flex;align-items:center;justify-content:space-between;padding:10px 0 6px;flex-wrap:wrap;gap:8px;}
 .logo{display:flex;align-items:center;gap:10px;}
@@ -24,14 +22,14 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:
 .logo h1{font-size:14px;font-weight:700;letter-spacing:-.01em;}
 .logo .sub{font-size:10px;color:var(--text3);}
 .badge{font-size:10px;background:#fef2f2;color:var(--red);border:1px solid #fecaca;padding:2px 8px;border-radius:20px;margin-left:8px;}
-/* filters */
 .filter-bar{display:flex;gap:8px;flex-wrap:wrap;padding-bottom:8px;align-items:center;}
 .fg{display:flex;align-items:center;gap:5px;}
 .fg label{font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.06em;}
 select,input[type=text]{font-size:11px;padding:5px 9px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:inherit;outline:none;cursor:pointer;transition:border .15s;box-shadow:var(--sh);}
 select:focus,input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(59,130,246,.15);}
 input[type=text]{width:145px;}
-/* bucket pills */
+.refresh-btn{font-size:11px;padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface);cursor:pointer;font-family:inherit;box-shadow:var(--sh);transition:all .15s;}
+.refresh-btn:hover{background:var(--surface2);}
 .bucket-bar{display:flex;gap:6px;padding:7px 0 10px;border-top:1px solid var(--border);flex-wrap:wrap;}
 .bkt{font-size:11px;padding:5px 14px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;font-family:inherit;font-weight:500;transition:all .2s;display:flex;align-items:center;gap:5px;}
 .bkt:hover{transform:translateY(-1px);border-color:var(--text3);}
@@ -39,14 +37,11 @@ input[type=text]{width:145px;}
 .bkt.on.b-ajio  {background:var(--ajio);border-color:var(--ajio);color:#fff;box-shadow:0 4px 12px rgba(59,130,246,.3);}
 .bkt.on.b-nonajio{background:var(--nonajio);border-color:var(--nonajio);color:#fff;box-shadow:0 4px 12px rgba(16,185,129,.3);}
 .bkt-dot{width:7px;height:7px;border-radius:50%;}
-/* tabs */
 .tabs{display:flex;background:var(--surface);border-bottom:2px solid var(--border);padding:0 20px;overflow-x:auto;}
 .tab{font-size:12px;padding:10px 18px;cursor:pointer;border:none;background:none;color:var(--text3);border-bottom:2.5px solid transparent;margin-bottom:-2px;font-family:inherit;white-space:nowrap;font-weight:500;transition:all .2s;}
 .tab.on{color:var(--blue);border-bottom-color:var(--blue);font-weight:700;}
 .tab:hover:not(.on){color:var(--text2);background:var(--surface2);}
-/* body */
 .body{padding:16px 20px;max-width:1500px;margin:0 auto;}
-/* kpi */
 .krow{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:10px;margin-bottom:14px;}
 .kpi{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;position:relative;overflow:hidden;box-shadow:var(--sh);transition:transform .2s,box-shadow .2s;animation:fadeUp .4s ease both;}
 .kpi:hover{transform:translateY(-2px);box-shadow:var(--shm);}
@@ -60,13 +55,11 @@ input[type=text]{width:145px;}
 .kpi .lb{font-size:10px;color:var(--text3);margin-bottom:5px;text-transform:uppercase;letter-spacing:.05em;}
 .kpi .vl{font-size:22px;font-weight:700;line-height:1;}
 .kpi .sb{font-size:10px;color:var(--text3);margin-top:5px;display:flex;align-items:center;gap:4px;flex-wrap:wrap;}
-/* cards */
 .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin-bottom:10px;box-shadow:var(--sh);animation:fadeUp .45s ease both;}
 .card-title{font-size:11px;font-weight:700;color:var(--text2);margin-bottom:14px;text-transform:uppercase;letter-spacing:.06em;display:flex;align-items:center;justify-content:space-between;}
 .card-hint{font-size:10px;font-weight:400;color:var(--text3);text-transform:none;letter-spacing:0;}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;}
 @media(max-width:860px){.grid2{grid-template-columns:1fr;}}
-/* table */
 .tw{overflow-x:auto;max-height:460px;overflow-y:auto;}
 .tw::-webkit-scrollbar{width:5px;height:5px;}.tw::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
 table{width:100%;border-collapse:collapse;font-size:11.5px;}
@@ -87,7 +80,6 @@ tr:hover td{background:#f0f7ff;}
 tbody tr:nth-child(even) td{background:#fafbff;}
 tbody tr:nth-child(even):hover td{background:#f0f7ff;}
 tr:last-child td{border-bottom:none;}
-/* pills */
 .pill{display:inline-block;font-size:10px;padding:2px 8px;border-radius:20px;font-weight:700;}
 .pr{background:#fef2f2;color:#dc2626;border:1px solid #fecaca;}
 .pg{background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;}
@@ -100,11 +92,10 @@ tr:last-child td{border-bottom:none;}
 .bchip.ajio{background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe;}
 .bchip.nonajio{background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;}
 .mbar{display:inline-block;height:5px;border-radius:3px;vertical-align:middle;margin-left:6px;min-width:2px;}
-/* loading */
 .loader{text-align:center;padding:60px 20px;color:var(--text3);font-size:13px;}
 .spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px;}
-.err-box{background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:16px 20px;color:#dc2626;font-size:12px;margin:20px 0;}
-/* animations */
+.err-box{background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:20px 24px;color:#dc2626;font-size:12px;margin:20px 0;line-height:1.7;}
+.err-box code{background:#fff;padding:2px 6px;border-radius:4px;border:1px solid #fecaca;font-size:11px;}
 @keyframes fadeUp{from{opacity:0;transform:translateY(14px);}to{opacity:1;transform:translateY(0);}}
 @keyframes rowSlide{from{opacity:0;transform:translateX(-8px);}to{opacity:1;transform:translateX(0);}}
 @keyframes spin{to{transform:rotate(360deg);}}
@@ -148,7 +139,7 @@ tr:last-child td{border-bottom:none;}
       <div class="fg"><label>Search</label>
         <input type="text" id="srch" placeholder="Search client…" oninput="go()">
       </div>
-      <button onclick="refreshData()" style="font-size:11px;padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface);cursor:pointer;font-family:inherit;box-shadow:var(--sh);">⟳ Refresh</button>
+      <button class="refresh-btn" onclick="refreshData()">⟳ Refresh</button>
     </div>
   </div>
   <div class="bucket-bar">
@@ -175,89 +166,148 @@ tr:last-child td{border-bottom:none;}
 </div>
 
 <script>
-// ══════════════════════════════════════════════════════════
-//  CONFIG — paste your deployed Apps Script Web App URL here
-// ══════════════════════════════════════════════════════════
+// ── CONFIG ────────────────────────────────────────────────
 const API_URL = 'https://script.google.com/macros/s/AKfycbz10g5T03pF-1FeOp6ilTxfBZbiYTSLyGYcWToKCcbeT8XMohANCoiEx-V3SvN3fZ-V/exec';
-// Example: 'https://script.google.com/macros/s/AKfycbxXXXX.../exec'
 
-// ══════════════════════════════════════════════════════════
-let DB   = null;   // { meta, summary, wow, mom }
+// ── STATE ─────────────────────────────────────────────────
+let DB   = null;
 let TAB  = 'ov';
 let BKT  = 'all';
 let SORT = { col:'del', dir:'desc' };
 let CH   = {};
 const PAL= ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316','#ec4899','#84cc16','#6366f1'];
 
-// ── FETCH ─────────────────────────────────────────────────
-async function apiFetch(action) {
+// ── Data fetching — JSONP first, plain fetch fallback ────
+// JSONP bypasses CORS entirely (Apps Script must wrap in callback)
+function jsonpFetch(action) {
+  return new Promise((resolve, reject) => {
+    const cbName = '__cb_' + action + '_' + Date.now();
+    const script  = document.createElement('script');
+
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error('Timeout: ' + action));
+    }, 30000);
+
+    window[cbName] = (data) => {
+      cleanup();
+      data && data.error ? reject(new Error(data.error)) : resolve(data);
+    };
+
+    function cleanup() {
+      clearTimeout(timer);
+      delete window[cbName];
+      script.parentNode && script.parentNode.removeChild(script);
+    }
+
+    const sep = API_URL.includes('?') ? '&' : '?';
+    script.src = API_URL + sep + 'action=' + action + '&callback=' + cbName;
+    // On script-load error fall back to plain fetch (same-origin / CORS enabled deployments)
+    script.onerror = () => {
+      cleanup();
+      plainFetch(action).then(resolve).catch(reject);
+    };
+    document.head.appendChild(script);
+  });
+}
+
+// Plain fetch fallback (works when Apps Script CORS headers are set)
+async function plainFetch(action) {
   const sep = API_URL.includes('?') ? '&' : '?';
-  const res = await fetch(API_URL + sep + 'action=' + action);
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  const j = await res.json();
-  if (j.error) throw new Error(j.error);
+  const r = await fetch(API_URL + sep + 'action=' + action, { redirect: 'follow' });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const j = await r.json();
+  if (j && j.error) throw new Error(j.error);
   return j;
 }
 
+// ── LOAD DATA ─────────────────────────────────────────────
 async function loadData() {
+  showLoader();
   try {
+    // Load all 4 endpoints in parallel via JSONP
     const [meta, summary, wow, mom] = await Promise.all([
-      apiFetch('meta'), apiFetch('summary'), apiFetch('wow'), apiFetch('mom')
+      jsonpFetch('meta'),
+      jsonpFetch('summary'),
+      jsonpFetch('wow'),
+      jsonpFetch('mom')
     ]);
+
     DB = { meta, summary, wow, mom };
-    // populate client dropdown
+
+    // Populate client dropdown
     const sel = document.getElementById('clf');
     sel.innerHTML = '<option value="">All</option>';
     meta.clients.forEach(c => {
-      const o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o);
+      const o = document.createElement('option');
+      o.value = c; o.textContent = c;
+      sel.appendChild(o);
     });
-    const lastMo = meta.months[meta.months.length-1] || '';
+
+    const lastMo = meta.months[meta.months.length - 1] || '';
     document.getElementById('dataSubtitle').textContent =
-      'Jan 2026 – ' + lastMo + '  ·  ' + meta.clients.length + ' clients  ·  Live from Google Sheets';
+      'Jan 2026 – ' + lastMo + '  ·  ' + meta.clients.length + ' clients  ·  Live from Google Sheets  ·  ' +
+      new Date().toLocaleTimeString('en-IN');
+
     go();
   } catch(e) {
-    document.getElementById('s-ov').innerHTML =
-      `<div class="err-box">⚠ Could not load data.<br><small>${e.message}</small><br><br>
-       <strong>Setup:</strong> Paste your Apps Script Web App URL into the <code>API_URL</code> variable in this HTML file.</div>`;
+    showError(e.message);
   }
+}
+
+function showLoader() {
+  document.getElementById('s-ov').innerHTML =
+    '<div class="loader"><div class="spinner"></div>Loading live data from Google Sheets…</div>';
+}
+
+function showError(msg) {
+  document.getElementById('s-ov').innerHTML = `
+    <div class="err-box">
+      <strong>⚠ Could not load data</strong><br>
+      ${msg}<br><br>
+      <strong>Steps to fix:</strong><br>
+      <strong>Most likely fix — re-deploy your Apps Script:</strong><br>
+      1. Open Apps Script → <strong>Deploy → New deployment</strong><br>
+      2. Type: <em>Web app</em> · Execute as: <em>Me</em> · Access: <em>Anyone</em><br>
+      3. Copy the new URL and update <code>API_URL</code> in this file<br><br>
+      <em>Note: "Failed to fetch" = CORS blocked. JSONP needs the new Code.gs that wraps responses in a callback.</em>
+    </div>`;
 }
 
 async function refreshData() {
   DB = null;
-  document.getElementById('s-ov').innerHTML = '<div class="loader"><div class="spinner"></div>Refreshing…</div>';
+  showLoader();
   await loadData();
 }
 
 // ── BUCKET ────────────────────────────────────────────────
 function inBkt(c) {
   const aj = new Set(DB.meta.ajio);
-  if (BKT==='all')     return true;
-  if (BKT==='ajio')    return aj.has(c);
-  if (BKT==='nonajio') return !aj.has(c);
+  if (BKT === 'all')     return true;
+  if (BKT === 'ajio')    return aj.has(c);
+  if (BKT === 'nonajio') return !aj.has(c);
   return true;
 }
-function setBkt(b,btn) {
-  BKT=b;
-  document.querySelectorAll('.bkt').forEach(x=>x.classList.remove('on'));
+function setBkt(b, btn) {
+  BKT = b;
+  document.querySelectorAll('.bkt').forEach(x => x.classList.remove('on'));
   btn.classList.add('on');
-  document.getElementById('clf').value='';
+  document.getElementById('clf').value = '';
   go();
 }
 
-// ── FILTER ────────────────────────────────────────────────
+// ── FILTERS ───────────────────────────────────────────────
 function getWeeks() {
-  const n = parseInt(document.getElementById('wkf').value)||0;
-  const wks = DB.wow.weeks;
-  return n===0 ? wks : wks.slice(-n);
+  const n = parseInt(document.getElementById('wkf').value) || 0;
+  return n === 0 ? DB.wow.weeks : DB.wow.weeks.slice(-n);
 }
 function filteredClients() {
-  const cl=document.getElementById('clf').value;
-  const md=parseInt(document.getElementById('mnd').value)||0;
-  const sq=document.getElementById('srch').value.toLowerCase();
-  const aj=new Set(DB.meta.ajio);
+  const cl = document.getElementById('clf').value;
+  const md = parseInt(document.getElementById('mnd').value) || 0;
+  const sq = document.getElementById('srch').value.toLowerCase();
   return DB.meta.clients.filter(c => {
     if (!inBkt(c)) return false;
-    if (cl && c!==cl) return false;
+    if (cl && c !== cl) return false;
     if (sq && !c.toLowerCase().includes(sq)) return false;
     const s = DB.summary.clients[c];
     if (!s || s.del < md) return false;
@@ -268,180 +318,193 @@ function filteredClients() {
 // ── AGGREGATION ───────────────────────────────────────────
 function weekAgg(weeks, clients) {
   return weeks.map(wk => {
-    const wc = DB.wow.week_client[wk]||{};
+    const wc = DB.wow.week_client[wk] || {};
     let del=0,esc=0,loss=0,lv=0;
     clients.forEach(c => { const d=wc[c]; if(d){del+=d.del;esc+=d.esc;loss+=d.loss;lv+=d.lv;} });
-    return {wk,del,esc,loss,lv,
-      escP:del>0?esc/del*100:0, laP:esc>0?loss/esc*100:0,
-      cpo:del>0?lv/del:0, aov:loss>0?lv/loss:0};
+    return { wk, del, esc, loss, lv,
+      escP: del>0?esc/del*100:0, laP: esc>0?loss/esc*100:0,
+      cpo:  del>0?lv/del:0,      aov: loss>0?lv/loss:0 };
   });
 }
 function clientAgg(clients, weeks) {
-  const out={};
+  const out = {};
   clients.forEach(c => {
     let del=0,esc=0,loss=0,lv=0;
     weeks.forEach(wk => { const d=(DB.wow.week_client[wk]||{})[c]; if(d){del+=d.del;esc+=d.esc;loss+=d.loss;lv+=d.lv;} });
-    out[c]={del,esc,loss,lv,
-      escP:del>0?esc/del*100:0, laP:esc>0?loss/esc*100:0,
-      cpo:del>0?lv/del:0, aov:loss>0?lv/loss:0};
+    out[c] = { del, esc, loss, lv,
+      escP: del>0?esc/del*100:0, laP: esc>0?loss/esc*100:0,
+      cpo:  del>0?lv/del:0,      aov: loss>0?lv/loss:0 };
   });
   return out;
 }
 
 // ── SORT ──────────────────────────────────────────────────
 function doSort(entries) {
-  const {col,dir}=SORT;
-  return [...entries].sort((a,b) => {
-    const va=col==='name'?a[0].toLowerCase():(a[1][col]??0);
-    const vb=col==='name'?b[0].toLowerCase():(b[1][col]??0);
-    if(typeof va==='string') return dir==='asc'?va.localeCompare(vb):vb.localeCompare(va);
-    return dir==='desc'?vb-va:va-vb;
+  const {col, dir} = SORT;
+  return [...entries].sort((a, b) => {
+    const va = col==='name' ? a[0].toLowerCase() : (a[1][col]??0);
+    const vb = col==='name' ? b[0].toLowerCase() : (b[1][col]??0);
+    if (typeof va === 'string') return dir==='asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+    return dir==='desc' ? vb-va : va-vb;
   });
 }
-function clickSort(col) { SORT.dir=(SORT.col===col&&SORT.dir==='desc')?'asc':'desc'; SORT.col=col; go(); }
-function th(col,lbl) {
-  const a=SORT.col===col;
+function clickSort(col) {
+  SORT.dir = (SORT.col===col && SORT.dir==='desc') ? 'asc' : 'desc';
+  SORT.col = col; go();
+}
+function th(col, lbl) {
+  const a = SORT.col === col;
   return `<th class="${a?'sa':''}" onclick="clickSort('${col}')">${lbl}<span class="si">${a?(SORT.dir==='desc'?'▼':'▲'):'⇅'}</span></th>`;
 }
 
 // ── FORMAT ────────────────────────────────────────────────
-function f(v,t) {
-  if(v==null||isNaN(v)) return'—';
-  if(t==='p')  return v.toFixed(2)+'%';
-  if(t==='r')  return'₹'+Math.round(v).toLocaleString('en-IN');
-  if(t==='rk') { if(v>=1e7) return'₹'+(v/1e7).toFixed(2)+'Cr'; if(v>=1e5) return'₹'+(v/1e5).toFixed(1)+'L'; return'₹'+Math.round(v).toLocaleString('en-IN'); }
-  if(t==='nk') { if(v>=1e6) return(v/1e6).toFixed(2)+'M'; if(v>=1e3) return(v/1e3).toFixed(1)+'K'; return Math.round(v).toLocaleString('en-IN'); }
+function f(v, t) {
+  if (v==null||isNaN(v)) return '—';
+  if (t==='p')  return v.toFixed(2)+'%';
+  if (t==='r')  return '₹'+Math.round(v).toLocaleString('en-IN');
+  if (t==='rk') { if(v>=1e7) return '₹'+(v/1e7).toFixed(2)+'Cr'; if(v>=1e5) return '₹'+(v/1e5).toFixed(1)+'L'; return '₹'+Math.round(v).toLocaleString('en-IN'); }
+  if (t==='nk') { if(v>=1e6) return (v/1e6).toFixed(2)+'M'; if(v>=1e3) return (v/1e3).toFixed(1)+'K'; return Math.round(v).toLocaleString('en-IN'); }
   return Math.round(v).toLocaleString('en-IN');
 }
 function escCls(v){return v>=5?'pr':v>=2?'pa':v>=1?'pb':'pg';}
 function laCls(v) {return v>=70?'pg':v>=40?'pb':v>=20?'pa':'pr';}
-function badge(cur,prv,lG) {
-  if(prv==null) return'';
-  const d=cur-prv; if(Math.abs(d)<0.001) return'<span class="wow neu">→ 0.00%</span>';
-  const better=lG?d<0:d>0;
-  return`<span class="wow ${better?'dn':'up'}">${d>0?'▲':'▼'} ${Math.abs(d).toFixed(2)}%</span>`;
+function badge(cur, prv, lG) {
+  if (prv==null) return '';
+  const d = cur-prv;
+  if (Math.abs(d)<0.001) return '<span class="wow neu">→ 0.00%</span>';
+  const better = lG ? d<0 : d>0;
+  return `<span class="wow ${better?'dn':'up'}">${d>0?'▲':'▼'} ${Math.abs(d).toFixed(2)}%</span>`;
 }
 function bchip(c) {
-  if(BKT!=='all') return'';
-  const aj=new Set(DB.meta.ajio);
-  return aj.has(c)?'<span class="bchip ajio">AJIO</span>':'<span class="bchip nonajio">Non-AJIO</span>';
+  if (BKT!=='all') return '';
+  const aj = new Set(DB.meta.ajio);
+  return aj.has(c) ? '<span class="bchip ajio">AJIO</span>' : '<span class="bchip nonajio">Non-AJIO</span>';
 }
 
 // ── CHARTS ────────────────────────────────────────────────
-function dc(id){if(CH[id]){CH[id].destroy();delete CH[id];}}
-const BASE={
-  responsive:true,maintainAspectRatio:false,
-  animation:{duration:900,easing:'easeOutQuart'},
-  plugins:{
-    legend:{labels:{color:'#64748b',font:{size:10},boxWidth:10,padding:10}},
-    tooltip:{backgroundColor:'#fff',borderColor:'#e2e8f0',borderWidth:1,titleColor:'#1e2535',bodyColor:'#4a5568',padding:10,cornerRadius:8}
+function dc(id) { if(CH[id]){ CH[id].destroy(); delete CH[id]; } }
+
+const BASE_CHART_OPTS = {
+  responsive: true, maintainAspectRatio: false,
+  animation: { duration: 900, easing: 'easeOutQuart' },
+  plugins: {
+    legend: { labels: { color:'#64748b', font:{size:10}, boxWidth:10, padding:10 } },
+    tooltip: { backgroundColor:'#fff', borderColor:'#e2e8f0', borderWidth:1,
+               titleColor:'#1e2535', bodyColor:'#4a5568', padding:10, cornerRadius:8 }
   },
-  scales:{
-    x:{ticks:{color:'#94a3b8',font:{size:10},maxRotation:45},grid:{color:'rgba(226,232,240,.6)'},border:{dash:[4,4]}},
-    y:{ticks:{color:'#94a3b8',font:{size:10}},grid:{color:'rgba(226,232,240,.6)'},border:{dash:[4,4]}}
+  scales: {
+    x: { ticks:{color:'#94a3b8',font:{size:10},maxRotation:45}, grid:{color:'rgba(226,232,240,.6)'}, border:{dash:[4,4]} },
+    y: { ticks:{color:'#94a3b8',font:{size:10}},                grid:{color:'rgba(226,232,240,.6)'}, border:{dash:[4,4]} }
   }
 };
-const DATALABEL_PLUGIN = {
+
+const DL_PLUGIN = {
   id:'dl',
   afterDatasetsDraw(chart) {
-    const{ctx}=chart;
-    chart.data.datasets.forEach((ds,di) => {
-      const meta=chart.getDatasetMeta(di); if(meta.hidden)return;
-      meta.data.forEach((pt,i) => {
-        const val=ds.data[i]; if(val==null||val===0)return;
-        const lbl=chart._fmtY?chart._fmtY(val):String(Math.round(val));
+    const {ctx} = chart;
+    chart.data.datasets.forEach((ds, di) => {
+      const meta = chart.getDatasetMeta(di);
+      if (meta.hidden) return;
+      meta.data.forEach((pt, i) => {
+        const val = ds.data[i];
+        if (val==null || val===0) return;
+        const lbl = chart._fmtY ? chart._fmtY(val) : String(Math.round(val));
         ctx.save();
-        ctx.font='bold 9px Inter,sans-serif';
-        ctx.fillStyle=ds.borderColor||ds.backgroundColor;
-        ctx.textAlign='center'; ctx.textBaseline='bottom';
-        ctx.fillText(lbl,pt.x,pt.y-6);
+        ctx.font = 'bold 9px Inter,sans-serif';
+        ctx.fillStyle = ds.borderColor || ds.backgroundColor;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+        ctx.fillText(lbl, pt.x, pt.y - 6);
         ctx.restore();
       });
     });
   }
 };
-const HBAR_LABEL_PLUGIN = {
+const HBAR_PLUGIN = {
   id:'hbl',
   afterDatasetsDraw(chart) {
-    const{ctx,data}=chart;
-    const meta=chart.getDatasetMeta(0);
-    meta.data.forEach((bar,i) => {
-      const val=data.datasets[0].data[i]; if(!val)return;
-      const lbl=chart._fmtY?chart._fmtY(val):String(Math.round(val));
+    const {ctx, data} = chart;
+    const meta = chart.getDatasetMeta(0);
+    meta.data.forEach((bar, i) => {
+      const val = data.datasets[0].data[i];
+      if (!val) return;
+      const lbl = chart._fmtY ? chart._fmtY(val) : String(Math.round(val));
       ctx.save();
-      ctx.font='bold 10px Inter,sans-serif';
-      ctx.fillStyle='#4a5568'; ctx.textAlign='left'; ctx.textBaseline='middle';
-      ctx.fillText(lbl,bar.x+6,bar.y);
+      ctx.font = 'bold 10px Inter,sans-serif';
+      ctx.fillStyle = '#4a5568'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillText(lbl, bar.x + 6, bar.y);
       ctx.restore();
     });
   }
 };
 
-function lineChart(id,lbs,datasets,fmtY,h=220){
-  dc(id); const el=document.getElementById(id); if(!el)return;
-  el.parentElement.style.height=h+'px';
-  const opts=JSON.parse(JSON.stringify(BASE));
-  opts.plugins.tooltip.callbacks={label:c=>`${c.dataset.label}: ${fmtY(c.parsed.y)}`};
-  opts.scales.y.ticks.callback=fmtY;
-  const chart=new Chart(el,{type:'line',
-    data:{labels:lbs,datasets:datasets.map((d,i)=>({
-      label:d.label,data:d.data,
-      borderColor:d.color||PAL[i%10],backgroundColor:(d.color||PAL[i%10])+'22',
-      borderWidth:2.5,pointRadius:5,pointHoverRadius:7,
-      pointBackgroundColor:d.color||PAL[i%10],pointBorderColor:'#fff',pointBorderWidth:2,
-      tension:0.35,fill:false,borderDash:d.dash||[]
+function lineChart(id, lbs, datasets, fmtY, h=220) {
+  dc(id); const el = document.getElementById(id); if(!el) return;
+  el.parentElement.style.height = h + 'px';
+  const opts = JSON.parse(JSON.stringify(BASE_CHART_OPTS));
+  opts.plugins.tooltip.callbacks = { label: c => `${c.dataset.label}: ${fmtY(c.parsed.y)}` };
+  opts.scales.y.ticks.callback = fmtY;
+  const chart = new Chart(el, {
+    type: 'line',
+    data: { labels: lbs, datasets: datasets.map((d,i) => ({
+      label: d.label, data: d.data,
+      borderColor: d.color||PAL[i%10], backgroundColor: (d.color||PAL[i%10])+'22',
+      borderWidth: 2.5, pointRadius: 5, pointHoverRadius: 7,
+      pointBackgroundColor: d.color||PAL[i%10], pointBorderColor: '#fff', pointBorderWidth: 2,
+      tension: 0.35, fill: false, borderDash: d.dash||[]
     }))},
-    options:opts, plugins:[DATALABEL_PLUGIN]
+    options: opts, plugins: [DL_PLUGIN]
   });
-  chart._fmtY=fmtY; CH[id]=chart;
+  chart._fmtY = fmtY; CH[id] = chart;
 }
-function hbar(id,lbs,vals,colors,fmtY,h=260){
-  dc(id); const el=document.getElementById(id); if(!el)return;
-  el.parentElement.style.height=h+'px';
-  const opts=JSON.parse(JSON.stringify(BASE)); opts.indexAxis='y';
-  opts.plugins.tooltip.callbacks={label:c=>`${fmtY(c.parsed.x)}`};
-  const chart=new Chart(el,{type:'bar',
-    data:{labels:lbs,datasets:[{data:vals,backgroundColor:colors,borderRadius:5,borderSkipped:false}]},
-    options:opts,plugins:[HBAR_LABEL_PLUGIN]
+function hbar(id, lbs, vals, colors, fmtY, h=260) {
+  dc(id); const el = document.getElementById(id); if(!el) return;
+  el.parentElement.style.height = h + 'px';
+  const opts = JSON.parse(JSON.stringify(BASE_CHART_OPTS));
+  opts.indexAxis = 'y';
+  opts.plugins.tooltip.callbacks = { label: c => `${fmtY(c.parsed.x)}` };
+  const chart = new Chart(el, {
+    type: 'bar',
+    data: { labels: lbs, datasets: [{data:vals, backgroundColor:colors, borderRadius:5, borderSkipped:false}] },
+    options: opts, plugins: [HBAR_PLUGIN]
   });
-  chart._fmtY=fmtY; CH[id]=chart;
+  chart._fmtY = fmtY; CH[id] = chart;
 }
 
 // ── TAB SWITCH ────────────────────────────────────────────
-function sw(t,btn) {
-  TAB=t;
-  document.querySelectorAll('.tab').forEach(b=>b.classList.remove('on')); btn.classList.add('on');
-  document.querySelectorAll('.sec').forEach(s=>s.classList.remove('on'));
+function sw(t, btn) {
+  TAB = t;
+  document.querySelectorAll('.tab').forEach(b => b.classList.remove('on')); btn.classList.add('on');
+  document.querySelectorAll('.sec').forEach(s => s.classList.remove('on'));
   document.getElementById('s-'+t).classList.add('on');
-  if(DB) go();
+  if (DB) go();
 }
 function go() {
-  if(!DB) return;
-  if(TAB==='ov')  renderOv();
-  if(TAB==='esc') renderEsc();
-  if(TAB==='la')  renderLA();
-  if(TAB==='aov') renderAOV();
-  if(TAB==='mom') renderMom();
+  if (!DB) return;
+  if (TAB==='ov')  renderOv();
+  if (TAB==='esc') renderEsc();
+  if (TAB==='la')  renderLA();
+  if (TAB==='aov') renderAOV();
+  if (TAB==='mom') renderMom();
 }
 
-// ════════════════ OVERVIEW ════════════════
-function renderOv(){
+// ════════ OVERVIEW ════════
+function renderOv() {
   const clients=filteredClients(), weeks=getWeeks();
   const agg=weekAgg(weeks,clients);
-  const tD=agg.reduce((s,d)=>s+d.del,0),tE=agg.reduce((s,d)=>s+d.esc,0);
-  const tL=agg.reduce((s,d)=>s+d.loss,0),tV=agg.reduce((s,d)=>s+d.lv,0);
-  const eP=tD>0?tE/tD*100:0,lP=tE>0?tL/tE*100:0,cpo=tD>0?tV/tD:0,aov=tL>0?tV/tL:0;
+  const tD=agg.reduce((s,d)=>s+d.del,0), tE=agg.reduce((s,d)=>s+d.esc,0);
+  const tL=agg.reduce((s,d)=>s+d.loss,0), tV=agg.reduce((s,d)=>s+d.lv,0);
+  const eP=tD>0?tE/tD*100:0, lP=tE>0?tL/tE*100:0, cpo=tD>0?tV/tD:0, aov=tL>0?tV/tL:0;
   const ca=clientAgg(clients,weeks);
   const sorted=doSort(Object.entries(ca));
   const mx=Math.max(...Object.values(ca).map(d=>d.del),1);
   const lbs=agg.map(d=>d.wk.replace('2026-',''));
   let h=`<div class="krow">
-    <div class="kpi k-blue" style="animation-delay:.0s"><div class="lb">Total Deliveries</div><div class="vl">${f(tD,'nk')}</div><div class="sb">${clients.length} clients · ${weeks.length} wks</div></div>
-    <div class="kpi k-red"  style="animation-delay:.05s"><div class="lb">Overall Esc %</div><div class="vl">${f(eP,'p')}</div><div class="sb">${f(tE,'nk')} escalations</div></div>
-    <div class="kpi k-green" style="animation-delay:.1s"><div class="lb">Overall LA %</div><div class="vl">${f(lP,'p')}</div><div class="sb">${f(tL,'nk')} accepted</div></div>
-    <div class="kpi k-amber" style="animation-delay:.15s"><div class="lb">AOV</div><div class="vl">${f(aov,'r')}</div><div class="sb">Loss Amt ÷ Loss Count</div></div>
-    <div class="kpi k-purple" style="animation-delay:.2s"><div class="lb">Approx CPO</div><div class="vl">${f(cpo,'r')}</div><div class="sb">Loss Amt ÷ Del Count</div></div>
-    <div class="kpi k-teal" style="animation-delay:.25s"><div class="lb">Total Loss Value</div><div class="vl">${f(tV,'rk')}</div><div class="sb">${weeks.length} weeks</div></div>
+    <div class="kpi k-blue"   style="animation-delay:.0s" ><div class="lb">Total Deliveries</div><div class="vl">${f(tD,'nk')}</div><div class="sb">${clients.length} clients · ${weeks.length} wks</div></div>
+    <div class="kpi k-red"    style="animation-delay:.05s"><div class="lb">Overall Esc %</div><div class="vl">${f(eP,'p')}</div><div class="sb">${f(tE,'nk')} escalations</div></div>
+    <div class="kpi k-green"  style="animation-delay:.1s" ><div class="lb">Overall LA %</div><div class="vl">${f(lP,'p')}</div><div class="sb">${f(tL,'nk')} accepted</div></div>
+    <div class="kpi k-amber"  style="animation-delay:.15s"><div class="lb">AOV</div><div class="vl">${f(aov,'r')}</div><div class="sb">Loss Amt ÷ Loss Count</div></div>
+    <div class="kpi k-purple" style="animation-delay:.2s" ><div class="lb">Approx CPO</div><div class="vl">${f(cpo,'r')}</div><div class="sb">Loss Amt ÷ Del Count</div></div>
+    <div class="kpi k-teal"   style="animation-delay:.25s"><div class="lb">Total Loss Value</div><div class="vl">${f(tV,'rk')}</div><div class="sb">${weeks.length} weeks</div></div>
   </div>
   <div class="grid2">
     <div class="card"><div class="card-title">Esc % — Week Trend</div><div style="position:relative;height:215px"><canvas id="ovEC"></canvas></div></div>
@@ -449,7 +512,8 @@ function renderOv(){
   </div>
   <div class="card"><div class="card-title">Client Summary <span class="card-hint">↕ Click headers to sort</span></div>
   <div class="tw"><table><thead><tr>
-    ${th('name','Client')}${th('del','Deliveries')}${th('esc','Esc Count')}${th('escP','Esc %')}${th('loss','Loss Count')}${th('laP','LA %')}${th('lv','Loss Value')}${th('aov','AOV')}${th('cpo','Approx CPO')}
+    ${th('name','Client')}${th('del','Deliveries')}${th('esc','Esc Count')}${th('escP','Esc %')}
+    ${th('loss','Loss Count')}${th('laP','LA %')}${th('lv','Loss Value')}${th('aov','AOV')}${th('cpo','Approx CPO')}
   </tr></thead><tbody>`;
   sorted.forEach(([name,d])=>{
     const bar=`<span class="mbar" style="width:${Math.max(2,d.del/mx*55)}px;background:var(--blue);opacity:.3"></span>`;
@@ -464,8 +528,8 @@ function renderOv(){
   lineChart('ovLC',lbs,[{label:'LA %',color:'#10b981',data:agg.map(d=>d.laP)}],v=>v.toFixed(2)+'%');
 }
 
-// ════════════════ ESC WoW ════════════════
-function renderEsc(){
+// ════════ ESC WoW ════════
+function renderEsc() {
   const clients=filteredClients(), weeks=getWeeks();
   const agg=weekAgg(weeks,clients);
   const last=agg[agg.length-1], prev=agg[agg.length-2];
@@ -475,11 +539,11 @@ function renderEsc(){
   const top8=byEsc.slice(0,8).map(([c])=>c);
   const lbs=agg.map(d=>d.wk.replace('2026-',''));
   let h=`<div class="krow">
-    <div class="kpi k-red" style="animation-delay:.0s"><div class="lb">Overall Esc %</div><div class="vl">${f(last.escP,'p')}</div><div class="sb">${badge(last.escP,prev?.escP,true)} vs prev wk</div></div>
-    <div class="kpi k-red" style="animation-delay:.05s"><div class="lb">Highest Esc %</div><div class="vl" style="font-size:13px;margin-top:3px">${byEsc[0]?.[0]||'—'}</div><div class="sb">${f(byEsc[0]?.[1]?.escP,'p')}</div></div>
-    <div class="kpi k-red" style="animation-delay:.1s"><div class="lb">&gt;5% High</div><div class="vl">${Object.values(ca).filter(d=>d.escP>=5).length}</div><div class="sb"><span class="pill pr">clients</span></div></div>
+    <div class="kpi k-red"  style="animation-delay:.0s" ><div class="lb">Overall Esc %</div><div class="vl">${f(last.escP,'p')}</div><div class="sb">${badge(last.escP,prev?.escP,true)} vs prev wk</div></div>
+    <div class="kpi k-red"  style="animation-delay:.05s"><div class="lb">Highest Esc %</div><div class="vl" style="font-size:13px;margin-top:3px">${byEsc[0]?.[0]||'—'}</div><div class="sb">${f(byEsc[0]?.[1]?.escP,'p')}</div></div>
+    <div class="kpi k-red"  style="animation-delay:.1s" ><div class="lb">&gt;5% High</div><div class="vl">${Object.values(ca).filter(d=>d.escP>=5).length}</div><div class="sb"><span class="pill pr">clients</span></div></div>
     <div class="kpi k-amber" style="animation-delay:.15s"><div class="lb">2–5% Watch</div><div class="vl">${Object.values(ca).filter(d=>d.escP>=2&&d.escP<5).length}</div><div class="sb"><span class="pill pa">clients</span></div></div>
-    <div class="kpi k-blue" style="animation-delay:.2s"><div class="lb">1–2% OK</div><div class="vl">${Object.values(ca).filter(d=>d.escP>=1&&d.escP<2).length}</div><div class="sb"><span class="pill pb">clients</span></div></div>
+    <div class="kpi k-blue"  style="animation-delay:.2s" ><div class="lb">1–2% OK</div><div class="vl">${Object.values(ca).filter(d=>d.escP>=1&&d.escP<2).length}</div><div class="sb"><span class="pill pb">clients</span></div></div>
     <div class="kpi k-green" style="animation-delay:.25s"><div class="lb">&lt;1% Good</div><div class="vl">${Object.values(ca).filter(d=>d.del>0&&d.escP<1).length}</div><div class="sb"><span class="pill pg">clients</span></div></div>
   </div>
   <div class="grid2">
@@ -506,8 +570,8 @@ function renderEsc(){
     v=>v==null?'':v.toFixed(2)+'%',230);
 }
 
-// ════════════════ LA % ════════════════
-function renderLA(){
+// ════════ LA % ════════
+function renderLA() {
   const clients=filteredClients(), weeks=getWeeks();
   const agg=weekAgg(weeks,clients);
   const last=agg[agg.length-1], prev=agg[agg.length-2];
@@ -516,12 +580,12 @@ function renderLA(){
   const byLA=[...active].sort((a,b)=>b[1].laP-a[1].laP).slice(0,20);
   const lbs=agg.map(d=>d.wk.replace('2026-',''));
   let h=`<div class="krow">
-    <div class="kpi k-green" style="animation-delay:.0s"><div class="lb">Overall LA %</div><div class="vl">${f(last.laP,'p')}</div><div class="sb">${badge(last.laP,prev?.laP,false)} vs prev wk</div></div>
-    <div class="kpi k-green" style="animation-delay:.05s"><div class="lb">Highest LA %</div><div class="vl" style="font-size:13px;margin-top:3px">${byLA[0]?.[0]||'—'}</div><div class="sb">${f(byLA[0]?.[1]?.laP,'p')}</div></div>
-    <div class="kpi k-green" style="animation-delay:.1s"><div class="lb">&gt;70% Excellent</div><div class="vl">${active.filter(([,d])=>d.laP>=70).length}</div><div class="sb"><span class="pill pg">clients</span></div></div>
-    <div class="kpi k-blue" style="animation-delay:.15s"><div class="lb">40–70% Good</div><div class="vl">${active.filter(([,d])=>d.laP>=40&&d.laP<70).length}</div><div class="sb"><span class="pill pb">clients</span></div></div>
-    <div class="kpi k-amber" style="animation-delay:.2s"><div class="lb">20–40% Watch</div><div class="vl">${active.filter(([,d])=>d.laP>=20&&d.laP<40).length}</div><div class="sb"><span class="pill pa">clients</span></div></div>
-    <div class="kpi k-red" style="animation-delay:.25s"><div class="lb">&lt;20% Low</div><div class="vl">${active.filter(([,d])=>d.laP<20).length}</div><div class="sb"><span class="pill pr">clients</span></div></div>
+    <div class="kpi k-green"  style="animation-delay:.0s" ><div class="lb">Overall LA %</div><div class="vl">${f(last.laP,'p')}</div><div class="sb">${badge(last.laP,prev?.laP,false)} vs prev wk</div></div>
+    <div class="kpi k-green"  style="animation-delay:.05s"><div class="lb">Highest LA %</div><div class="vl" style="font-size:13px;margin-top:3px">${byLA[0]?.[0]||'—'}</div><div class="sb">${f(byLA[0]?.[1]?.laP,'p')}</div></div>
+    <div class="kpi k-green"  style="animation-delay:.1s" ><div class="lb">&gt;70% Excellent</div><div class="vl">${active.filter(([,d])=>d.laP>=70).length}</div><div class="sb"><span class="pill pg">clients</span></div></div>
+    <div class="kpi k-blue"   style="animation-delay:.15s"><div class="lb">40–70% Good</div><div class="vl">${active.filter(([,d])=>d.laP>=40&&d.laP<70).length}</div><div class="sb"><span class="pill pb">clients</span></div></div>
+    <div class="kpi k-amber"  style="animation-delay:.2s" ><div class="lb">20–40% Watch</div><div class="vl">${active.filter(([,d])=>d.laP>=20&&d.laP<40).length}</div><div class="sb"><span class="pill pa">clients</span></div></div>
+    <div class="kpi k-red"    style="animation-delay:.25s"><div class="lb">&lt;20% Low</div><div class="vl">${active.filter(([,d])=>d.laP<20).length}</div><div class="sb"><span class="pill pr">clients</span></div></div>
   </div>
   <div class="grid2">
     <div class="card"><div class="card-title">Overall LA % — WoW</div><div style="position:relative;height:230px"><canvas id="laOC"></canvas></div></div>
@@ -547,8 +611,8 @@ function renderLA(){
     v=>v.toFixed(1)+'%',230);
 }
 
-// ════════════════ AOV & CPO ════════════════
-function renderAOV(){
+// ════════ AOV & CPO ════════
+function renderAOV() {
   const clients=filteredClients(), weeks=getWeeks();
   const agg=weekAgg(weeks,clients);
   const last=agg[agg.length-1];
@@ -559,11 +623,11 @@ function renderAOV(){
   const tV=agg.reduce((s,d)=>s+d.lv,0);
   const lbs=agg.map(d=>d.wk.replace('2026-',''));
   let h=`<div class="krow">
-    <div class="kpi k-amber" style="animation-delay:.0s"><div class="lb">Overall AOV</div><div class="vl">${f(last.aov,'r')}</div><div class="sb">Loss Amt ÷ Loss Count</div></div>
+    <div class="kpi k-amber"  style="animation-delay:.0s" ><div class="lb">Overall AOV</div><div class="vl">${f(last.aov,'r')}</div><div class="sb">Loss Amt ÷ Loss Count</div></div>
     <div class="kpi k-purple" style="animation-delay:.05s"><div class="lb">Overall Approx CPO</div><div class="vl">${f(last.cpo,'r')}</div><div class="sb">Loss Amt ÷ Del Count</div></div>
-    <div class="kpi k-amber" style="animation-delay:.1s"><div class="lb">Highest AOV</div><div class="vl" style="font-size:13px;margin-top:3px">${byAov[0]?.[0]||'—'}</div><div class="sb">${f(byAov[0]?.[1]?.aov,'r')}</div></div>
+    <div class="kpi k-amber"  style="animation-delay:.1s" ><div class="lb">Highest AOV</div><div class="vl" style="font-size:13px;margin-top:3px">${byAov[0]?.[0]||'—'}</div><div class="sb">${f(byAov[0]?.[1]?.aov,'r')}</div></div>
     <div class="kpi k-purple" style="animation-delay:.15s"><div class="lb">Highest CPO</div><div class="vl" style="font-size:13px;margin-top:3px">${byCpo[0]?.[0]||'—'}</div><div class="sb">${f(byCpo[0]?.[1]?.cpo,'r')}</div></div>
-    <div class="kpi k-teal" style="animation-delay:.2s"><div class="lb">Total Loss Value</div><div class="vl">${f(tV,'rk')}</div><div class="sb">${weeks.length} weeks</div></div>
+    <div class="kpi k-teal"   style="animation-delay:.2s" ><div class="lb">Total Loss Value</div><div class="vl">${f(tV,'rk')}</div><div class="sb">${weeks.length} weeks</div></div>
   </div>
   <div class="grid2">
     <div class="card"><div class="card-title">AOV — WoW Trend</div><div style="position:relative;height:230px"><canvas id="aovTC"></canvas></div></div>
@@ -592,10 +656,9 @@ function renderAOV(){
   setTimeout(()=>hbar('cpoBC',byCpo.slice(0,20).map(([c])=>c.length>18?c.slice(0,17)+'…':c),byCpo.slice(0,20).map(([,d])=>d.cpo),byCpo.slice(0,20).map(([,d])=>d.cpo>=30?'#ef444488':d.cpo>=15?'#f59e0b88':d.cpo>=5?'#3b82f688':'#10b98188'),v=>'₹'+Math.round(v).toLocaleString('en-IN')),80);
 }
 
-// ════════════════ MoM ════════════════
-function renderMom(){
+// ════════ MoM ════════
+function renderMom() {
   const clients=filteredClients();
-  const aj=new Set(DB.meta.ajio);
   const monthAgg=DB.mom.months.map(m=>{
     let del=0,esc=0,loss=0,lv=0;
     clients.forEach(c=>{const d=m.clients[c];if(d){del+=d.del;esc+=d.esc;loss+=d.loss;lv+=d.lv;}});
@@ -606,11 +669,11 @@ function renderMom(){
   const lbs=monthAgg.map(d=>d.mo);
   const top8=clients.slice(0,8);
   let h=`<div class="krow">
-    <div class="kpi k-blue" style="animation-delay:.0s"><div class="lb">Latest Month</div><div class="vl">${last.mo}</div><div class="sb">${f(last.del,'nk')} deliveries</div></div>
-    <div class="kpi k-red" style="animation-delay:.05s"><div class="lb">Esc % Latest</div><div class="vl">${f(last.escP,'p')}</div><div class="sb">${badge(last.escP,prev?.escP,true)} MoM</div></div>
-    <div class="kpi k-green" style="animation-delay:.1s"><div class="lb">LA % Latest</div><div class="vl">${f(last.laP,'p')}</div><div class="sb">${badge(last.laP,prev?.laP,false)} MoM</div></div>
-    <div class="kpi k-amber" style="animation-delay:.15s"><div class="lb">AOV Latest</div><div class="vl">${f(last.aov,'r')}</div><div class="sb">Loss Amt ÷ Loss Count</div></div>
-    <div class="kpi k-purple" style="animation-delay:.2s"><div class="lb">CPO Latest</div><div class="vl">${f(last.cpo,'r')}</div><div class="sb">Loss Amt ÷ Del Count</div></div>
+    <div class="kpi k-blue"   style="animation-delay:.0s" ><div class="lb">Latest Month</div><div class="vl">${last.mo}</div><div class="sb">${f(last.del,'nk')} deliveries</div></div>
+    <div class="kpi k-red"    style="animation-delay:.05s"><div class="lb">Esc % Latest</div><div class="vl">${f(last.escP,'p')}</div><div class="sb">${badge(last.escP,prev?.escP,true)} MoM</div></div>
+    <div class="kpi k-green"  style="animation-delay:.1s" ><div class="lb">LA % Latest</div><div class="vl">${f(last.laP,'p')}</div><div class="sb">${badge(last.laP,prev?.laP,false)} MoM</div></div>
+    <div class="kpi k-amber"  style="animation-delay:.15s"><div class="lb">AOV Latest</div><div class="vl">${f(last.aov,'r')}</div><div class="sb">Loss Amt ÷ Loss Count</div></div>
+    <div class="kpi k-purple" style="animation-delay:.2s" ><div class="lb">CPO Latest</div><div class="vl">${f(last.cpo,'r')}</div><div class="sb">Loss Amt ÷ Del Count</div></div>
   </div>
   <div class="grid2">
     <div class="card"><div class="card-title">Esc % — MoM</div><div style="position:relative;height:230px"><canvas id="momEC"></canvas></div></div>
@@ -622,7 +685,9 @@ function renderMom(){
   </div>
   <div class="card"><div class="card-title">Esc % by Client — MoM (top 8 by volume)</div><div style="position:relative;height:260px"><canvas id="momCLC"></canvas></div></div>
   <div class="card"><div class="card-title">Month-wise Summary</div>
-  <div class="tw"><table><thead><tr><th>Month</th><th>Deliveries</th><th>Esc Count</th><th>Esc %</th><th>Loss Count</th><th>LA %</th><th>Loss Value</th><th>AOV</th><th>Approx CPO</th></tr></thead><tbody>`;
+  <div class="tw"><table><thead><tr>
+    <th>Month</th><th>Deliveries</th><th>Esc Count</th><th>Esc %</th><th>Loss Count</th><th>LA %</th><th>Loss Value</th><th>AOV</th><th>Approx CPO</th>
+  </tr></thead><tbody>`;
   monthAgg.forEach((d,i)=>{
     const p=i>0?monthAgg[i-1]:null;
     h+=`<tr><td>${d.mo}</td><td>${f(d.del,'nk')}</td><td>${f(d.esc,'nk')}</td>
@@ -637,11 +702,11 @@ function renderMom(){
   lineChart('momAC',lbs,[{label:'AOV',color:'#f59e0b',data:monthAgg.map(d=>d.aov)}],v=>'₹'+Math.round(v).toLocaleString('en-IN'),230);
   lineChart('momCC',lbs,[{label:'CPO',color:'#8b5cf6',data:monthAgg.map(d=>d.cpo)}],v=>'₹'+Math.round(v).toLocaleString('en-IN'),230);
   lineChart('momCLC',lbs,top8.map((c,i)=>({label:c,color:PAL[i%10],
-    data:DB.mom.months.map(m=>{const cl=clients.find(x=>x===c);if(!cl)return null;const d=m.clients[c];return d&&d.del>0?d.esc/d.del*100:null;})})),
+    data:DB.mom.months.map(m=>{const d=m.clients[c];return d&&d.del>0?d.esc/d.del*100:null;})})),
     v=>v==null?'':v.toFixed(2)+'%',260);
 }
 
-// ── INIT ─────────────────────────────────────────────────
+// ── START ─────────────────────────────────────────────────
 loadData();
 </script>
 </body>
