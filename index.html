@@ -7,6 +7,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <style>
 
+
 :root{
   --bg:#f4f6fb;--surface:#fff;--surface2:#f0f3fa;--border:#e2e8f0;
   --text:#1e2535;--text2:#4a5568;--text3:#94a3b8;
@@ -102,6 +103,7 @@ tr:last-child td{border-bottom:none;}
 @keyframes spin{to{transform:rotate(360deg);}}
 .sec{display:none;}.sec.on{display:block;}
 
+
 </style>
 </head>
 <body>
@@ -166,101 +168,89 @@ tr:last-child td{border-bottom:none;}
   <div id="s-mom" class="sec"></div>
 </div>
 <script>
+// =============================================================
+//  Dashboard JS — calls /api/data (Vercel proxy, same-origin)
+//  Apps Script URL is in api/data.js — NOT needed here
+// =============================================================
 
-// ── CONFIG ─────────────────────────────────────────────────
-// Calls /api/data (Vercel serverless proxy — same origin, zero CORS)
-const API_BASE = '/api/data';
-
-// ── FETCH ────────────────────────────────────────────────────
-async function apiFetch(action) {
-  const url = `${API_BASE}?action=${action}`;
-  console.log('[dashboard] fetching', url);
-  const r = await fetch(url);
-  console.log('[dashboard]', action, 'status', r.status);
-  if (!r.ok) {
-    const txt = await r.text().catch(()=> '');
-    throw new Error(`HTTP ${r.status} (${action}) ${txt.slice(0,200)}`);
-  }
-  const j = await r.json();
-  if (j && j.error) throw new Error(`${action}: ${j.error}` + (j.detail ? ' — ' + j.detail : ''));
-  console.log('[dashboard]', action, 'OK', j);
-  return j;
-}
-
-// ── STATE ─────────────────────────────────────────────────
+// ── STATE ─────────────────────────────────────────────────────
 let DB   = null;
 let TAB  = 'ov';
 let BKT  = 'all';
 let SORT = { col:'del', dir:'desc' };
 let CH   = {};
-const PAL= ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316','#ec4899','#84cc16','#6366f1'];
+const PAL = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6',
+             '#06b6d4','#f97316','#ec4899','#84cc16','#6366f1'];
 
-// ── LOAD DATA ─────────────────────────────────────────────
+// ── FETCH — calls /api/data (same-origin Vercel proxy) ───────
+async function apiFetch(action) {
+  const url = '/api/data?action=' + action;
+  console.log('[dash] GET', url);
+  let r;
+  try {
+    r = await fetch(url);
+  } catch(netErr) {
+    throw new Error('Network error on ' + action + ': ' + netErr.message);
+  }
+  const text = await r.text();
+  console.log('[dash]', action, 'status=' + r.status, 'len=' + text.length);
+  if (!r.ok) {
+    throw new Error('HTTP ' + r.status + ' on ' + action + ': ' + text.slice(0,200));
+  }
+  let j;
+  try { j = JSON.parse(text); }
+  catch(e) { throw new Error('Bad JSON on ' + action + ': ' + text.slice(0,200)); }
+  if (j && j.error) throw new Error(action + ' error: ' + j.error);
+  return j;
+}
+
+// ── LOAD ──────────────────────────────────────────────────────
 async function loadData() {
-  showLoader();
-  console.log('[dashboard] loadData start');
+  document.getElementById('s-ov').innerHTML =
+    '<div class="loader"><div class="spinner"></div>Loading live data…</div>';
+  console.log('[dash] loadData start');
   try {
     const [meta, summary, wow, mom] = await Promise.all([
-      apiFetch('meta'),
-      apiFetch('summary'),
-      apiFetch('wow'),
-      apiFetch('mom')
+      apiFetch('meta'), apiFetch('summary'), apiFetch('wow'), apiFetch('mom')
     ]);
-
-    console.log('[dashboard] all endpoints loaded',
-      { clients: meta.clients?.length, weeks: meta.weeks?.length, months: meta.months?.length });
-
+    console.log('[dash] all loaded — clients=' + meta.clients?.length +
+                ' weeks=' + meta.weeks?.length + ' months=' + meta.months?.length);
     if (!meta.clients || meta.clients.length === 0) {
-      throw new Error('No clients returned. Open the Apps Script URL with ?action=debug to diagnose the Base sheet.');
+      throw new Error('Apps Script returned 0 clients. Check /api/data?action=debug');
     }
-
     DB = { meta, summary, wow, mom };
-
     const sel = document.getElementById('clf');
     sel.innerHTML = '<option value="">All</option>';
     meta.clients.forEach(c => {
       const o = document.createElement('option');
       o.value = c; o.textContent = c; sel.appendChild(o);
     });
-
     const lastMo = meta.months[meta.months.length - 1] || '';
     document.getElementById('dataSubtitle').textContent =
-      'Jan 2026 – ' + lastMo + '  ·  ' + meta.clients.length + ' clients  ·  Live  ·  ' +
-      new Date().toLocaleTimeString('en-IN');
-
+      'Jan 2026 – ' + lastMo + ' · ' + meta.clients.length +
+      ' clients · Live · ' + new Date().toLocaleTimeString('en-IN');
     go();
-    console.log('[dashboard] render complete');
   } catch(e) {
-    console.error('[dashboard] loadData failed:', e);
+    console.error('[dash] loadData failed:', e);
     showError(e.message);
   }
 }
 
-function showLoader() {
-  document.getElementById('s-ov').innerHTML =
-    '<div class="loader"><div class="spinner"></div>Loading live data from Google Sheets…</div>';
+async function refreshData() {
+  DB = null;
+  await loadData();
 }
 
 function showError(msg) {
   document.getElementById('s-ov').innerHTML = `
     <div class="err-box">
-      <strong>⚠ Could not load data</strong><br>
-      ${msg}<br><br>
-      <strong>Diagnose in 30 seconds:</strong><br>
-      1. Open this URL in a new tab:<br>
-      &nbsp;&nbsp;<a href="/api/data?action=debug" target="_blank" style="color:#2563eb">/api/data?action=debug</a><br>
-      &nbsp;&nbsp;(shows sheet names, row counts, parsed data from the Base sheet)<br>
-      2. Check the <code>parsedRows</code> and <code>rows2026</code> values<br>
-      3. If <code>rows2026</code> is 0 → no 2026 data in Base, or date column issue<br>
-      4. Also open <a href="/api/data?action=meta" target="_blank" style="color:#2563eb">/api/data?action=meta</a> to see raw JSON<br><br>
-      <em>Open browser DevTools → Console for detailed logs.</em>
+      <strong>⚠ Could not load data</strong><br>${msg}<br><br>
+      <strong>Debug links (open in new tab):</strong><br>
+      <a href="/api/data?action=debug"  target="_blank">/api/data?action=debug</a>  — sheet diagnostics<br>
+      <a href="/api/data?action=meta"   target="_blank">/api/data?action=meta</a>   — raw client list<br>
+      <a href="/api/data?action=summary" target="_blank">/api/data?action=summary</a> — raw summary<br><br>
+      <em>Also check browser Console (F12) for detailed logs.</em>
     </div>`;
-}
-
-async function refreshData() {
-  DB = null;
-  showLoader();
-  await loadData();
 }
 
 // ── BUCKET ────────────────────────────────────────────────
@@ -691,7 +681,6 @@ function renderMom() {
 
 // ── START ─────────────────────────────────────────────────
 loadData();
-
 </script>
 </body>
 </html>
