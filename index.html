@@ -173,10 +173,17 @@ const API_BASE = '/api/data';
 
 // ── FETCH ────────────────────────────────────────────────────
 async function apiFetch(action) {
-  const r = await fetch(`${API_BASE}?action=${action}`);
-  if (!r.ok) throw new Error(`HTTP ${r.status} for action=${action}`);
+  const url = `${API_BASE}?action=${action}`;
+  console.log('[dashboard] fetching', url);
+  const r = await fetch(url);
+  console.log('[dashboard]', action, 'status', r.status);
+  if (!r.ok) {
+    const txt = await r.text().catch(()=> '');
+    throw new Error(`HTTP ${r.status} (${action}) ${txt.slice(0,200)}`);
+  }
   const j = await r.json();
-  if (j && j.error) throw new Error(j.error);
+  if (j && j.error) throw new Error(`${action}: ${j.error}` + (j.detail ? ' — ' + j.detail : ''));
+  console.log('[dashboard]', action, 'OK', j);
   return j;
 }
 
@@ -188,55 +195,11 @@ let SORT = { col:'del', dir:'desc' };
 let CH   = {};
 const PAL= ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316','#ec4899','#84cc16','#6366f1'];
 
-// ── Data fetching — JSONP first, plain fetch fallback ────
-// JSONP bypasses CORS entirely (Apps Script must wrap in callback)
-function apiFetch(action) {
-  return new Promise((resolve, reject) => {
-    const cbName = '__cb_' + action + '_' + Date.now();
-    const script  = document.createElement('script');
-
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error('Timeout: ' + action));
-    }, 30000);
-
-    window[cbName] = (data) => {
-      cleanup();
-      data && data.error ? reject(new Error(data.error)) : resolve(data);
-    };
-
-    function cleanup() {
-      clearTimeout(timer);
-      delete window[cbName];
-      script.parentNode && script.parentNode.removeChild(script);
-    }
-
-    const sep = API_URL.includes('?') ? '&' : '?';
-    script.src = API_URL + sep + 'action=' + action + '&callback=' + cbName;
-    // On script-load error fall back to plain fetch (same-origin / CORS enabled deployments)
-    script.onerror = () => {
-      cleanup();
-      plainFetch(action).then(resolve).catch(reject);
-    };
-    document.head.appendChild(script);
-  });
-}
-
-// Plain fetch fallback (works when Apps Script CORS headers are set)
-async function plainFetch(action) {
-  const sep = API_URL.includes('?') ? '&' : '?';
-  const r = await fetch(API_URL + sep + 'action=' + action, { redirect: 'follow' });
-  if (!r.ok) throw new Error('HTTP ' + r.status);
-  const j = await r.json();
-  if (j && j.error) throw new Error(j.error);
-  return j;
-}
-
 // ── LOAD DATA ─────────────────────────────────────────────
 async function loadData() {
   showLoader();
+  console.log('[dashboard] loadData start');
   try {
-    // Load all 4 endpoints in parallel via JSONP
     const [meta, summary, wow, mom] = await Promise.all([
       apiFetch('meta'),
       apiFetch('summary'),
@@ -244,24 +207,31 @@ async function loadData() {
       apiFetch('mom')
     ]);
 
+    console.log('[dashboard] all endpoints loaded',
+      { clients: meta.clients?.length, weeks: meta.weeks?.length, months: meta.months?.length });
+
+    if (!meta.clients || meta.clients.length === 0) {
+      throw new Error('No clients returned. Open the Apps Script URL with ?action=debug to diagnose the Base sheet.');
+    }
+
     DB = { meta, summary, wow, mom };
 
-    // Populate client dropdown
     const sel = document.getElementById('clf');
     sel.innerHTML = '<option value="">All</option>';
     meta.clients.forEach(c => {
       const o = document.createElement('option');
-      o.value = c; o.textContent = c;
-      sel.appendChild(o);
+      o.value = c; o.textContent = c; sel.appendChild(o);
     });
 
     const lastMo = meta.months[meta.months.length - 1] || '';
     document.getElementById('dataSubtitle').textContent =
-      'Jan 2026 – ' + lastMo + '  ·  ' + meta.clients.length + ' clients  ·  Live from Google Sheets  ·  ' +
+      'Jan 2026 – ' + lastMo + '  ·  ' + meta.clients.length + ' clients  ·  Live  ·  ' +
       new Date().toLocaleTimeString('en-IN');
 
     go();
+    console.log('[dashboard] render complete');
   } catch(e) {
+    console.error('[dashboard] loadData failed:', e);
     showError(e.message);
   }
 }
@@ -276,10 +246,14 @@ function showError(msg) {
     <div class="err-box">
       <strong>⚠ Could not load data</strong><br>
       ${msg}<br><br>
-      <strong>Check:</strong><br>
-      1. <code>api/data.js</code> is deployed on Vercel<br>
-      2. Apps Script Web App URL in <code>api/data.js</code> is correct<br>
-      3. Apps Script is deployed as: <em>Execute as Me · Access: Anyone</em>
+      <strong>Diagnose in 30 seconds:</strong><br>
+      1. Open this URL in a new tab:<br>
+      &nbsp;&nbsp;<a href="/api/data?action=debug" target="_blank" style="color:#2563eb">/api/data?action=debug</a><br>
+      &nbsp;&nbsp;(shows sheet names, row counts, parsed data from the Base sheet)<br>
+      2. Check the <code>parsedRows</code> and <code>rows2026</code> values<br>
+      3. If <code>rows2026</code> is 0 → no 2026 data in Base, or date column issue<br>
+      4. Also open <a href="/api/data?action=meta" target="_blank" style="color:#2563eb">/api/data?action=meta</a> to see raw JSON<br><br>
+      <em>Open browser DevTools → Console for detailed logs.</em>
     </div>`;
 }
 
