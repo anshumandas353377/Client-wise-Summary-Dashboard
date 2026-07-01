@@ -253,25 +253,36 @@ async function apiFetch(action) {
 }
 
 // ── LOAD ──────────────────────────────────────────────────────
-async function loadData() {
+async function loadData(retry) {
+  retry = retry || 0;
+  const msgs = [
+    '⏳ Loading data from Google Sheets…',
+    '⏳ Still loading — reading the Base sheet can take 20–30s on first load…',
+    '⏳ Almost there — large dataset, hang tight…'
+  ];
   document.getElementById('s-ov').innerHTML =
-    '<div class="loader"><div class="spinner"></div>Loading live data…</div>';
-  console.log('[dash] loadData start');
+    `<div class="loader"><div class="spinner"></div>${msgs[Math.min(retry, 2)]}</div>`;
+  document.getElementById('dataSubtitle').textContent = 'Loading…';
+  console.log('[dash] loadData attempt', retry + 1);
+
   try {
-    const [meta, summary, wow, mom] = await Promise.all([
-      apiFetch('meta'), apiFetch('summary'), apiFetch('wow'), apiFetch('mom')
-    ]);
-    console.log('[dash] all loaded — clients=' + meta.clients?.length +
-                ' weeks=' + meta.weeks?.length + ' months=' + meta.months?.length);
-    if (!meta.clients || meta.clients.length === 0) {
-      throw new Error('Apps Script returned 0 clients. Check /api/data?action=debug');
+    // ONE call returns meta + summary + wow + mom together (avoids 4× sheet reads → timeouts)
+    const payload = await apiFetch('all');
+    const { meta, summary, wow, mom } = payload;
+
+    console.log('[dash] loaded — clients=' + meta?.clients?.length +
+      ' weeks=' + wow?.weeks?.length + ' months=' + mom?.months?.length);
+
+    if (!meta?.clients?.length) {
+      throw new Error('No clients in response. Open /api/data?action=debug to diagnose.');
     }
+
     DB = { meta, summary, wow, mom };
 
-    SEL_WEEKS = meta.weeks.slice(-6);
-    WEEK_MODE = 'last6';
+    SEL_WEEKS  = meta.weeks.slice(-6);
+    WEEK_MODE  = 'last6';
     SEL_CLIENTS = [];
-    MIN_DEL = 0;
+    MIN_DEL    = 0;
 
     renderWeekList();
     renderClientList();
@@ -282,9 +293,22 @@ async function loadData() {
     document.getElementById('dataSubtitle').textContent =
       'Jan 2026 – ' + lastMo + ' · ' + meta.clients.length +
       ' clients · Live · ' + new Date().toLocaleTimeString('en-IN');
+
     go();
-  } catch(e) {
-    console.error('[dash] loadData failed:', e);
+    console.log('[dash] render complete');
+
+  } catch (e) {
+    console.error('[dash] loadData failed (attempt ' + (retry + 1) + '):', e);
+
+    // Auto-retry once on 504 — second attempt hits Apps Script's 5-min cache
+    if (e.message && e.message.includes('504') && retry < 1) {
+      console.log('[dash] 504 → retrying in 4s (cache should be warm now)…');
+      document.getElementById('s-ov').innerHTML =
+        '<div class="loader"><div class="spinner"></div>⏳ First load timed out — retrying (cache warm-up)…</div>';
+      await new Promise(r => setTimeout(r, 4000));
+      return loadData(retry + 1);
+    }
+
     showError(e.message);
   }
 }
@@ -299,10 +323,13 @@ function showError(msg) {
     <div class="err-box">
       <strong>⚠ Could not load data</strong><br>${msg}<br><br>
       <strong>Debug links (open in new tab):</strong><br>
-      <a href="/api/data?action=debug"  target="_blank">/api/data?action=debug</a>  — sheet diagnostics<br>
-      <a href="/api/data?action=meta"   target="_blank">/api/data?action=meta</a>   — raw client list<br>
-      <a href="/api/data?action=summary" target="_blank">/api/data?action=summary</a> — raw summary<br><br>
-      <em>Also check browser Console (F12) for detailed logs.</em>
+      <a href="/api/data?action=debug"  target="_blank">/api/data?action=debug</a> — sheet diagnostics<br>
+      <a href="/api/data?action=all"    target="_blank">/api/data?action=all</a>   — full raw data<br><br>
+      <strong>If you see 504 repeatedly:</strong><br>
+      1. Open the Apps Script editor → Run <code>TEST_runDebug()</code> to warm the cache<br>
+      2. Then reload this page — cached response is &lt;1s<br>
+      3. Or deploy Apps Script with a trigger that pre-warms the cache every 4 min<br><br>
+      <em>Check browser Console (F12) for detailed logs.</em>
     </div>`;
 }
 
