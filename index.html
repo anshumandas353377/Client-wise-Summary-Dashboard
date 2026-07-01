@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Client Wise Dashboard</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 
 
@@ -30,6 +32,22 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:
 select,input[type=text]{font-size:11px;padding:5px 9px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:inherit;outline:none;cursor:pointer;transition:border .15s;box-shadow:var(--sh);}
 select:focus,input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(59,130,246,.15);}
 input[type=text]{width:145px;}
+.msel{position:relative;}
+.msel-btn{font-size:11px;padding:5px 9px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:inherit;outline:none;cursor:pointer;transition:border .15s;box-shadow:var(--sh);min-width:130px;display:flex;align-items:center;justify-content:space-between;gap:6px;white-space:nowrap;}
+.msel-btn:hover{border-color:var(--text3);}
+.msel-arrow{font-size:9px;color:var(--text3);}
+.msel-panel{display:none;position:absolute;top:calc(100% + 4px);left:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:var(--shm);z-index:300;min-width:220px;max-width:300px;overflow:hidden;}
+.msel-panel.open{display:block;}
+.msel-quick{display:flex;gap:4px;padding:8px;border-bottom:1px solid var(--border);}
+.msel-quick button{font-size:10px;padding:4px 8px;border-radius:5px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);cursor:pointer;font-family:inherit;}
+.msel-quick button:hover{background:var(--blue);color:#fff;border-color:var(--blue);}
+.msel-search{width:100%;border:none;border-bottom:1px solid var(--border);padding:8px 10px;font-size:11px;outline:none;font-family:inherit;box-shadow:none;border-radius:0;}
+.msel-list{max-height:260px;overflow-y:auto;padding:4px 0;}
+.msel-list::-webkit-scrollbar{width:4px;}.msel-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+.msel-item{display:flex;align-items:center;gap:7px;padding:6px 10px;font-size:11px;cursor:pointer;color:var(--text2);}
+.msel-item:hover{background:var(--surface2);}
+.msel-item input{cursor:pointer;width:13px;height:13px;accent-color:var(--blue);box-shadow:none;}
+.msel-item.checked{color:var(--text);font-weight:600;}
 .refresh-btn{font-size:11px;padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface);cursor:pointer;font-family:inherit;box-shadow:var(--sh);transition:all .15s;}
 .refresh-btn:hover{background:var(--surface2);}
 .bucket-bar{display:flex;gap:6px;padding:7px 0 10px;border-top:1px solid var(--border);flex-wrap:wrap;}
@@ -120,29 +138,59 @@ tr:last-child td{border-bottom:none;}
     </div>
     <div class="filter-bar">
       <div class="fg"><label>Weeks</label>
-        <select id="wkf" onchange="go()">
-          <option value="6" selected>Last 6 Weeks</option>
-          <option value="8">Last 8 Weeks</option>
-          <option value="12">Last 12 Weeks</option>
-          <option value="0">All Weeks</option>
-        </select>
+        <div class="msel" id="wkfWrap">
+          <button type="button" class="msel-btn" onclick="toggleMsel('wkf')">Last 6 Weeks <span class="msel-arrow">▾</span></button>
+          <div class="msel-panel" id="wkfPanel">
+            <div class="msel-quick">
+              <button type="button" onclick="quickWeeks(6)">Last 6</button>
+              <button type="button" onclick="quickWeeks(8)">Last 8</button>
+              <button type="button" onclick="quickWeeks(12)">Last 12</button>
+              <button type="button" onclick="quickWeeks(0)">All</button>
+            </div>
+            <div class="msel-list" id="wkfList"></div>
+          </div>
+        </div>
       </div>
       <div class="fg"><label>Client</label>
-        <select id="clf" onchange="go()"><option value="">All</option></select>
+        <div class="msel" id="clfWrap">
+          <button type="button" class="msel-btn" onclick="toggleMsel('clf')">All Clients <span class="msel-arrow">▾</span></button>
+          <div class="msel-panel" id="clfPanel">
+            <input type="text" class="msel-search" id="clfSearch" placeholder="Filter clients…" oninput="renderClientList()">
+            <div class="msel-quick">
+              <button type="button" onclick="selectAllClients(true)">Select All</button>
+              <button type="button" onclick="selectAllClients(false)">Clear</button>
+            </div>
+            <div class="msel-list" id="clfList"></div>
+          </div>
+        </div>
       </div>
       <div class="fg"><label>Min Del</label>
-        <select id="mnd" onchange="go()">
-          <option value="0">All</option>
-          <option value="100">100+</option>
-          <option value="1000">1K+</option>
-          <option value="10000">10K+</option>
-          <option value="50000">50K+</option>
-        </select>
+        <div class="msel" id="mndWrap">
+          <button type="button" class="msel-btn" onclick="toggleMsel('mnd')" style="min-width:110px">No Minimum <span class="msel-arrow">▾</span></button>
+          <div class="msel-panel" id="mndPanel" style="min-width:200px">
+            <div class="msel-quick" style="flex-wrap:wrap;">
+              <button type="button" onclick="setMinDel(0)">No Min</button>
+              <button type="button" onclick="setMinDel(50)">50+</button>
+              <button type="button" onclick="setMinDel(100)">100+</button>
+              <button type="button" onclick="setMinDel(500)">500+</button>
+              <button type="button" onclick="setMinDel(1000)">1K+</button>
+              <button type="button" onclick="setMinDel(5000)">5K+</button>
+              <button type="button" onclick="setMinDel(10000)">10K+</button>
+              <button type="button" onclick="setMinDel(50000)">50K+</button>
+              <button type="button" onclick="setMinDel(100000)">100K+</button>
+            </div>
+            <div style="padding:8px 10px;border-top:1px solid var(--border);">
+              <label style="display:block;font-size:10px;color:var(--text3);margin-bottom:4px;">Custom value</label>
+              <input type="number" id="mndCustom" placeholder="e.g. 2500" style="width:100%" min="0" onchange="setMinDel(this.value)">
+            </div>
+          </div>
+        </div>
       </div>
       <div class="fg"><label>Search</label>
         <input type="text" id="srch" placeholder="Search client…" oninput="go()">
       </div>
       <button class="refresh-btn" onclick="refreshData()">⟳ Refresh</button>
+      <button class="refresh-btn" id="pdfBtn" onclick="downloadPdf()">⬇ Download PDF</button>
     </div>
   </div>
   <div class="bucket-bar">
@@ -219,12 +267,17 @@ async function loadData() {
       throw new Error('Apps Script returned 0 clients. Check /api/data?action=debug');
     }
     DB = { meta, summary, wow, mom };
-    const sel = document.getElementById('clf');
-    sel.innerHTML = '<option value="">All</option>';
-    meta.clients.forEach(c => {
-      const o = document.createElement('option');
-      o.value = c; o.textContent = c; sel.appendChild(o);
-    });
+
+    SEL_WEEKS = meta.weeks.slice(-6);
+    WEEK_MODE = 'last6';
+    SEL_CLIENTS = [];
+    MIN_DEL = 0;
+
+    renderWeekList();
+    renderClientList();
+    updateWeekBtnLabel();
+    updateClientBtnLabel();
+
     const lastMo = meta.months[meta.months.length - 1] || '';
     document.getElementById('dataSubtitle').textContent =
       'Jan 2026 – ' + lastMo + ' · ' + meta.clients.length +
@@ -253,7 +306,122 @@ function showError(msg) {
     </div>`;
 }
 
-// ── BUCKET ────────────────────────────────────────────────
+// ── PDF EXPORT — captures all 5 tabs into one multi-page PDF ──
+async function downloadPdf() {
+  if (!DB) { alert('Data still loading — please wait.'); return; }
+  const btn = document.getElementById('pdfBtn');
+  const origTxt = btn.innerHTML;
+  btn.innerHTML = '⏳ Generating…';
+  btn.disabled = true;
+
+  try {
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('l', 'pt', 'a3'); // landscape A3 for wider tables
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    const margin = 28;
+
+    const tabOrder = [
+      { id:'ov',  btn:0, title:'Overview' },
+      { id:'esc', btn:1, title:'Escalation % WoW' },
+      { id:'la',  btn:2, title:'Loss Accepted %' },
+      { id:'aov', btn:3, title:'AOV & CPO' },
+      { id:'mom', btn:4, title:'Month-wise Trend' }
+    ];
+
+    const tabButtons = document.querySelectorAll('.tab');
+    const originalTab = TAB;
+
+    for (let t = 0; t < tabOrder.length; t++) {
+      const info = tabOrder[t];
+
+      // Switch tab, wait for charts to animate
+      sw(info.id, tabButtons[info.btn]);
+      await new Promise(res => setTimeout(res, 900));
+
+      const target = document.getElementById('s-' + info.id);
+
+      // Temporarily expand all scrollable table containers so full content is captured
+      const scrollBoxes = target.querySelectorAll('.tw');
+      const origStyles = [];
+      scrollBoxes.forEach(box => {
+        origStyles.push(box.style.cssText);
+        box.style.maxHeight = 'none';
+        box.style.overflowY = 'visible';
+      });
+
+      await new Promise(res => setTimeout(res, 100)); // reflow
+
+      const canvas = await html2canvas(target, {
+        scale: 1.8,
+        backgroundColor: '#ffffff',
+        useCORS: true,
+        logging: false,
+        windowWidth: 1400,
+        scrollX: 0, scrollY: 0
+      });
+
+      // Restore scroll containers
+      scrollBoxes.forEach((box, i) => { box.style.cssText = origStyles[i]; });
+
+      const imgW  = pageW - margin * 2;
+      const imgH  = (canvas.height * imgW) / canvas.width;
+      const contentH = pageH - 50 - margin;
+
+      if (t > 0) pdf.addPage();
+
+      // Blue header strip
+      pdf.setFillColor(59, 130, 246);
+      pdf.rect(0, 0, pageW, 40, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(13); pdf.setFont(undefined, 'bold');
+      pdf.text('Client Wise Summary  —  ' + info.title, margin, 26);
+      pdf.setFontSize(8); pdf.setFont(undefined, 'normal');
+      const ts = new Date().toLocaleString('en-IN', {day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+      pdf.text(ts, pageW - margin - 110, 26);
+
+      let yOffset = 0;
+      const startY = 50;
+
+      while (yOffset < imgH) {
+        if (yOffset > 0) {
+          pdf.addPage();
+          pdf.setFillColor(59, 130, 246);
+          pdf.rect(0, 0, pageW, 40, 'F');
+          pdf.setTextColor(255,255,255); pdf.setFontSize(13); pdf.setFont(undefined,'bold');
+          pdf.text('Client Wise Summary  —  ' + info.title + '  (continued)', margin, 26);
+          pdf.text(ts, pageW - margin - 110, 26);
+        }
+
+        const sliceH    = Math.min(contentH, imgH - yOffset);
+        const srcY      = yOffset * (canvas.height / imgH);
+        const srcH      = sliceH  * (canvas.height / imgH);
+
+        const slice     = document.createElement('canvas');
+        slice.width     = canvas.width;
+        slice.height    = Math.ceil(srcH);
+        slice.getContext('2d').drawImage(canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, srcH);
+
+        pdf.addImage(slice.toDataURL('image/png'), 'PNG', margin, startY, imgW, sliceH);
+        yOffset += sliceH;
+      }
+    }
+
+    // Restore original tab
+    const origIdx = tabOrder.findIndex(x => x.id === originalTab);
+    sw(originalTab, tabButtons[origIdx >= 0 ? origIdx : 0]);
+
+    pdf.save('ClientWise_Dashboard_' + new Date().toISOString().slice(0,10) + '.pdf');
+  } catch (err) {
+    console.error('[PDF]', err);
+    alert('PDF export failed: ' + err.message);
+  } finally {
+    btn.innerHTML = origTxt;
+    btn.disabled  = false;
+  }
+}
+
+
 function inBkt(c) {
   const aj = new Set(DB.meta.ajio);
   if (BKT === 'all')     return true;
@@ -265,30 +433,129 @@ function setBkt(b, btn) {
   BKT = b;
   document.querySelectorAll('.bkt').forEach(x => x.classList.remove('on'));
   btn.classList.add('on');
-  document.getElementById('clf').value = '';
+  SEL_CLIENTS = [];
+  updateClientBtnLabel();
+  renderClientList();
   go();
 }
 
-// ── FILTERS ───────────────────────────────────────────────
-function getWeeks() {
-  const n = parseInt(document.getElementById('wkf').value) || 0;
-  return n === 0 ? DB.wow.weeks : DB.wow.weeks.slice(-n);
+// ── MULTI-SELECT STATE ─────────────────────────────────────
+let SEL_WEEKS   = [];     // array of selected week labels (empty = use quick range)
+let WEEK_MODE   = 'last6'; // 'last6'|'last8'|'last12'|'all'|'custom'
+let SEL_CLIENTS = [];     // array of selected client names (empty = All)
+let MIN_DEL     = 0;
+
+function toggleMsel(key) {
+  const panel = document.getElementById(key + 'Panel');
+  const isOpen = panel.classList.contains('open');
+  document.querySelectorAll('.msel-panel').forEach(p => p.classList.remove('open'));
+  if (!isOpen) panel.classList.add('open');
 }
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.msel')) {
+    document.querySelectorAll('.msel-panel').forEach(p => p.classList.remove('open'));
+  }
+});
+
+// ── WEEKS multi-select ───────────────────────────────────────
+function renderWeekList() {
+  const box = document.getElementById('wkfList');
+  if (!DB) return;
+  box.innerHTML = DB.wow.weeks.map(w => {
+    const checked = SEL_WEEKS.includes(w);
+    return `<label class="msel-item ${checked?'checked':''}">
+      <input type="checkbox" value="${w}" ${checked?'checked':''} onchange="toggleWeek('${w}')">
+      ${w.replace('2026-','')}
+    </label>`;
+  }).join('');
+}
+function toggleWeek(w) {
+  WEEK_MODE = 'custom';
+  const i = SEL_WEEKS.indexOf(w);
+  if (i === -1) SEL_WEEKS.push(w); else SEL_WEEKS.splice(i, 1);
+  SEL_WEEKS.sort();
+  updateWeekBtnLabel();
+  renderWeekList();
+  go();
+}
+function quickWeeks(n) {
+  if (!DB) return;
+  WEEK_MODE = n === 0 ? 'all' : ('last' + n);
+  SEL_WEEKS = n === 0 ? [...DB.wow.weeks] : DB.wow.weeks.slice(-n);
+  updateWeekBtnLabel();
+  renderWeekList();
+  go();
+}
+function updateWeekBtnLabel() {
+  const btn = document.querySelector('#wkfWrap .msel-btn');
+  const labels = { last6:'Last 6 Weeks', last8:'Last 8 Weeks', last12:'Last 12 Weeks', all:'All Weeks' };
+  let txt;
+  if (WEEK_MODE !== 'custom' && labels[WEEK_MODE]) txt = labels[WEEK_MODE];
+  else txt = SEL_WEEKS.length === 0 ? 'Select weeks…' : SEL_WEEKS.length + ' weeks selected';
+  btn.innerHTML = txt + ' <span class="msel-arrow">▾</span>';
+}
+function getWeeks() {
+  if (!DB) return [];
+  return SEL_WEEKS.length ? SEL_WEEKS : DB.wow.weeks.slice(-6);
+}
+
+// ── CLIENT multi-select ──────────────────────────────────────
+function renderClientList() {
+  const box = document.getElementById('clfList');
+  if (!DB) return;
+  const q = (document.getElementById('clfSearch').value || '').toLowerCase();
+  const list = DB.meta.clients.filter(c => !q || c.toLowerCase().includes(q));
+  box.innerHTML = list.map(c => {
+    const checked = SEL_CLIENTS.includes(c);
+    return `<label class="msel-item ${checked?'checked':''}">
+      <input type="checkbox" value="${c}" ${checked?'checked':''} onchange="toggleClient('${c.replace(/'/g,"\\'")}')">
+      ${c}
+    </label>`;
+  }).join('');
+}
+function toggleClient(c) {
+  const i = SEL_CLIENTS.indexOf(c);
+  if (i === -1) SEL_CLIENTS.push(c); else SEL_CLIENTS.splice(i, 1);
+  updateClientBtnLabel();
+  renderClientList();
+  go();
+}
+function selectAllClients(all) {
+  SEL_CLIENTS = all ? [...DB.meta.clients] : [];
+  updateClientBtnLabel();
+  renderClientList();
+  go();
+}
+function updateClientBtnLabel() {
+  const btn = document.querySelector('#clfWrap .msel-btn');
+  const txt = SEL_CLIENTS.length === 0 ? 'All Clients' :
+    (SEL_CLIENTS.length === 1 ? SEL_CLIENTS[0] : SEL_CLIENTS.length + ' clients selected');
+  btn.innerHTML = txt + ' <span class="msel-arrow">▾</span>';
+}
+
+// ── MIN DEL custom ────────────────────────────────────────────
+function setMinDel(v) {
+  MIN_DEL = parseInt(v) || 0;
+  const btn = document.querySelector('#mndWrap .msel-btn');
+  btn.innerHTML = (MIN_DEL === 0 ? 'No Minimum' : ('≥ ' + MIN_DEL.toLocaleString('en-IN'))) + ' <span class="msel-arrow">▾</span>';
+  document.querySelectorAll('.msel-panel').forEach(p => p.classList.remove('open'));
+  go();
+}
+
+
+
+// ── FILTERED CLIENTS (uses multi-select state) ────────────────
 function filteredClients() {
-  const cl = document.getElementById('clf').value;
-  const md = parseInt(document.getElementById('mnd').value) || 0;
   const sq = document.getElementById('srch').value.toLowerCase();
   return DB.meta.clients.filter(c => {
     if (!inBkt(c)) return false;
-    if (cl && c !== cl) return false;
+    if (SEL_CLIENTS.length && !SEL_CLIENTS.includes(c)) return false;
     if (sq && !c.toLowerCase().includes(sq)) return false;
     const s = DB.summary.clients[c];
-    if (!s || s.del < md) return false;
+    if (!s || s.del < MIN_DEL) return false;
     return true;
   });
 }
-
-// ── AGGREGATION ───────────────────────────────────────────
 function weekAgg(weeks, clients) {
   return weeks.map(wk => {
     const wc = DB.wow.week_client[wk] || {};
@@ -333,10 +600,13 @@ function th(col, lbl) {
 // ── FORMAT ────────────────────────────────────────────────
 function f(v, t) {
   if (v==null||isNaN(v)) return '—';
-  if (t==='p')  return v.toFixed(2)+'%';
-  if (t==='r')  return '₹'+Math.round(v).toLocaleString('en-IN');
-  if (t==='rk') { if(v>=1e7) return '₹'+(v/1e7).toFixed(2)+'Cr'; if(v>=1e5) return '₹'+(v/1e5).toFixed(1)+'L'; return '₹'+Math.round(v).toLocaleString('en-IN'); }
-  if (t==='nk') { if(v>=1e6) return (v/1e6).toFixed(2)+'M'; if(v>=1e3) return (v/1e3).toFixed(1)+'K'; return Math.round(v).toLocaleString('en-IN'); }
+  if (t==='p')   return v.toFixed(2)+'%';
+  if (t==='cpo') return '₹'+v.toFixed(2);                              // CPO/AOV — always exact 2 decimals
+  if (t==='r')   return '₹'+v.toFixed(2);                               // currency — exact 2 decimals
+  if (t==='rk')  { if(v>=1e7) return '₹'+(v/1e7).toFixed(2)+'Cr'; if(v>=1e5) return '₹'+(v/1e5).toFixed(1)+'L'; return '₹'+Math.round(v).toLocaleString('en-IN'); }
+  if (t==='rv')  return '₹'+Math.round(v).toLocaleString('en-IN');      // exact rupee, whole number, no Cr/L abbreviation
+  if (t==='n')   return Math.round(v).toLocaleString('en-IN');          // exact whole number — Del/Loss counts
+  if (t==='nk')  { if(v>=1e6) return (v/1e6).toFixed(2)+'M'; if(v>=1e3) return (v/1e3).toFixed(1)+'K'; return Math.round(v).toLocaleString('en-IN'); }
   return Math.round(v).toLocaleString('en-IN');
 }
 function escCls(v){return v>=5?'pr':v>=2?'pa':v>=1?'pb':'pg';}
@@ -381,7 +651,8 @@ const DL_PLUGIN = {
       meta.data.forEach((pt, i) => {
         const val = ds.data[i];
         if (val==null || val===0) return;
-        const lbl = chart._fmtY ? chart._fmtY(val) : String(Math.round(val));
+        const fmt = chart._fmtY || (v => '₹'+v.toFixed(2));
+        const lbl = fmt(val);
         ctx.save();
         ctx.font = 'bold 9px Inter,sans-serif';
         ctx.fillStyle = ds.borderColor || ds.backgroundColor;
@@ -400,7 +671,8 @@ const HBAR_PLUGIN = {
     meta.data.forEach((bar, i) => {
       const val = data.datasets[0].data[i];
       if (!val) return;
-      const lbl = chart._fmtY ? chart._fmtY(val) : String(Math.round(val));
+      const fmt = chart._fmtY || (v => '₹'+v.toFixed(2));
+      const lbl = fmt(val);
       ctx.save();
       ctx.font = 'bold 10px Inter,sans-serif';
       ctx.fillStyle = '#4a5568'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
@@ -409,6 +681,67 @@ const HBAR_PLUGIN = {
     });
   }
 };
+
+function comboChart(id, lbs, barSeries, lineSeries, fmtBar, fmtLine, h=230) {
+  dc(id); const el = document.getElementById(id); if(!el) return;
+  el.parentElement.style.height = h + 'px';
+  const chart = new Chart(el, {
+    data: {
+      labels: lbs,
+      datasets: [
+        {
+          type:'bar', label: barSeries.label, data: barSeries.data,
+          backgroundColor: barSeries.color+'55', borderColor: barSeries.color,
+          borderWidth:1, borderRadius:4, yAxisID:'y1', order:2
+        },
+        {
+          type:'line', label: lineSeries.label, data: lineSeries.data,
+          borderColor: lineSeries.color, backgroundColor: lineSeries.color+'22',
+          borderWidth:2.5, pointRadius:5, pointHoverRadius:7,
+          pointBackgroundColor: lineSeries.color, pointBorderColor:'#fff', pointBorderWidth:2,
+          tension:0.35, fill:false, yAxisID:'y2', order:1
+        }
+      ]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      animation:{duration:900,easing:'easeOutQuart'},
+      interaction:{mode:'index', intersect:false},
+      plugins:{
+        legend:{labels:{color:'#64748b',font:{size:10},boxWidth:10,padding:10}},
+        tooltip:{
+          backgroundColor:'#fff', borderColor:'#e2e8f0', borderWidth:1,
+          titleColor:'#1e2535', bodyColor:'#4a5568', padding:10, cornerRadius:8,
+          callbacks:{ label: c => c.dataset.yAxisID==='y1'
+            ? `${c.dataset.label}: ${fmtBar(c.parsed.y)}`
+            : `${c.dataset.label}: ${fmtLine(c.parsed.y)}` }
+        }
+      },
+      scales:{
+        x:{ ticks:{color:'#94a3b8',font:{size:10},maxRotation:45}, grid:{display:false} },
+        y1:{ position:'left', ticks:{color:'#94a3b8',font:{size:9},callback:fmtBar}, grid:{color:'rgba(226,232,240,.5)'}, title:{display:true,text:barSeries.label,color:'#94a3b8',font:{size:9}} },
+        y2:{ position:'right', ticks:{color:'#94a3b8',font:{size:9},callback:fmtLine}, grid:{display:false}, title:{display:true,text:lineSeries.label,color:'#94a3b8',font:{size:9}} }
+      }
+    },
+    plugins:[{
+      id:'comboDl',
+      afterDatasetsDraw(c) {
+        const {ctx} = c;
+        const lineMeta = c.getDatasetMeta(1);
+        lineMeta.data.forEach((pt,i)=>{
+          const val = lineSeries.data[i]; if(val==null) return;
+          ctx.save();
+          ctx.font='bold 9px Inter,sans-serif'; ctx.fillStyle=lineSeries.color;
+          ctx.textAlign='center'; ctx.textBaseline='bottom';
+          ctx.fillText(fmtLine(val), pt.x, pt.y-6);
+          ctx.restore();
+        });
+      }
+    }]
+  });
+  CH[id] = chart;
+}
+
 
 function lineChart(id, lbs, datasets, fmtY, h=220) {
   dc(id); const el = document.getElementById(id); if(!el) return;
@@ -472,28 +805,33 @@ function renderOv() {
   const mx=Math.max(...Object.values(ca).map(d=>d.del),1);
   const lbs=agg.map(d=>d.wk.replace('2026-',''));
   let h=`<div class="krow">
-    <div class="kpi k-blue"   style="animation-delay:.0s" ><div class="lb">Total Deliveries</div><div class="vl">${f(tD,'nk')}</div><div class="sb">${clients.length} clients · ${weeks.length} wks</div></div>
-    <div class="kpi k-red"    style="animation-delay:.05s"><div class="lb">Overall Esc %</div><div class="vl">${f(eP,'p')}</div><div class="sb">${f(tE,'nk')} escalations</div></div>
-    <div class="kpi k-green"  style="animation-delay:.1s" ><div class="lb">Overall LA %</div><div class="vl">${f(lP,'p')}</div><div class="sb">${f(tL,'nk')} accepted</div></div>
-    <div class="kpi k-amber"  style="animation-delay:.15s"><div class="lb">AOV</div><div class="vl">${f(aov,'r')}</div><div class="sb">Loss Amt ÷ Loss Count</div></div>
-    <div class="kpi k-purple" style="animation-delay:.2s" ><div class="lb">Approx CPO</div><div class="vl">${f(cpo,'r')}</div><div class="sb">Loss Amt ÷ Del Count</div></div>
-    <div class="kpi k-teal"   style="animation-delay:.25s"><div class="lb">Total Loss Value</div><div class="vl">${f(tV,'rk')}</div><div class="sb">${weeks.length} weeks</div></div>
+    <div class="kpi k-blue"   style="animation-delay:.0s" ><div class="lb">Total Deliveries</div><div class="vl">${f(tD,'n')}</div><div class="sb">${clients.length} clients · ${weeks.length} wks</div></div>
+    <div class="kpi k-red"    style="animation-delay:.05s"><div class="lb">Overall Esc %</div><div class="vl">${f(eP,'p')}</div><div class="sb">${f(tE,'n')} escalations</div></div>
+    <div class="kpi k-green"  style="animation-delay:.1s" ><div class="lb">Overall LA %</div><div class="vl">${f(lP,'p')}</div><div class="sb">${f(tL,'n')} accepted</div></div>
+    <div class="kpi k-amber"  style="animation-delay:.15s"><div class="lb">AOV</div><div class="vl">${f(aov,'cpo')}</div><div class="sb">Loss Amt ÷ Loss Count</div></div>
+    <div class="kpi k-purple" style="animation-delay:.2s" ><div class="lb">Approx CPO</div><div class="vl">${f(cpo,'cpo')}</div><div class="sb">Loss Amt ÷ Del Count</div></div>
+    <div class="kpi k-teal"   style="animation-delay:.25s"><div class="lb">Total Loss Value</div><div class="vl">${f(tV,'rv')}</div><div class="sb">${weeks.length} weeks</div></div>
   </div>
   <div class="grid2">
     <div class="card"><div class="card-title">Esc % — Week Trend</div><div style="position:relative;height:215px"><canvas id="ovEC"></canvas></div></div>
     <div class="card"><div class="card-title">LA % — Week Trend</div><div style="position:relative;height:215px"><canvas id="ovLC"></canvas></div></div>
   </div>
-  <div class="card"><div class="card-title">Client Summary <span class="card-hint">↕ Click headers to sort</span></div>
+  <div class="card"><div class="card-title">Client Summary <span class="card-hint">↕ Click headers to sort &nbsp;·&nbsp; weekly delivery count shown per selected week</span></div>
   <div class="tw"><table><thead><tr>
-    ${th('name','Client')}${th('del','Deliveries')}${th('esc','Esc Count')}${th('escP','Esc %')}
+    ${th('name','Client')}${th('del','Total Del')}${th('esc','Esc Count')}${th('escP','Esc %')}
     ${th('loss','Loss Count')}${th('laP','LA %')}${th('lv','Loss Value')}${th('aov','AOV')}${th('cpo','Approx CPO')}
+    ${weeks.map(w=>`<th>${w.replace('2026-','')} Del</th>`).join('')}
   </tr></thead><tbody>`;
   sorted.forEach(([name,d])=>{
     const bar=`<span class="mbar" style="width:${Math.max(2,d.del/mx*55)}px;background:var(--blue);opacity:.3"></span>`;
-    h+=`<tr><td title="${name}">${name}${bchip(name)}</td><td>${f(d.del,'nk')}${bar}</td><td>${f(d.esc,'nk')}</td>
-      <td><span class="pill ${escCls(d.escP)}">${f(d.escP,'p')}</span></td><td>${f(d.loss,'nk')}</td>
-      <td><span class="pill ${laCls(d.laP)}">${f(d.laP,'p')}</span></td><td>${f(d.lv,'rk')}</td>
-      <td>${d.loss>0?f(d.aov,'r'):'—'}</td><td>${d.del>0?f(d.cpo,'r'):'—'}</td></tr>`;
+    const weeklyDel = weeks.map(wk => {
+      const wd = (DB.wow.week_client[wk]||{})[name];
+      return `<td>${wd ? f(wd.del,'n') : '—'}</td>`;
+    }).join('');
+    h+=`<tr><td title="${name}">${name}${bchip(name)}</td><td>${f(d.del,'n')}${bar}</td><td>${f(d.esc,'n')}</td>
+      <td><span class="pill ${escCls(d.escP)}">${f(d.escP,'p')}</span></td><td>${f(d.loss,'n')}</td>
+      <td><span class="pill ${laCls(d.laP)}">${f(d.laP,'p')}</span></td><td>${f(d.lv,'rv')}</td>
+      <td>${d.loss>0?f(d.aov,'cpo'):'—'}</td><td>${d.del>0?f(d.cpo,'cpo'):'—'}</td>${weeklyDel}</tr>`;
   });
   h+=`</tbody></table></div></div>`;
   document.getElementById('s-ov').innerHTML=h;
@@ -520,7 +858,7 @@ function renderEsc() {
     <div class="kpi k-green" style="animation-delay:.25s"><div class="lb">&lt;1% Good</div><div class="vl">${Object.values(ca).filter(d=>d.del>0&&d.escP<1).length}</div><div class="sb"><span class="pill pg">clients</span></div></div>
   </div>
   <div class="grid2">
-    <div class="card"><div class="card-title">Overall Esc % — WoW</div><div style="position:relative;height:230px"><canvas id="escOC"></canvas></div></div>
+    <div class="card"><div class="card-title">Overall Esc % &amp; Delivery Count — WoW</div><div style="position:relative;height:230px"><canvas id="escOC"></canvas></div></div>
     <div class="card"><div class="card-title">Top 8 Clients Esc % — WoW</div><div style="position:relative;height:230px"><canvas id="escCC"></canvas></div></div>
   </div>
   <div class="card"><div class="card-title">Client-wise Esc % — Week on Week <span class="card-hint">↕ Click headers to sort</span></div>
@@ -530,14 +868,17 @@ function renderEsc() {
   </tr></thead><tbody>`;
   doSort(active).forEach(([name,d])=>{
     const wd=weeks.map(wk=>{const r=(DB.wow.week_client[wk]||{})[name]||{del:0,esc:0};return r.del>0?r.esc/r.del*100:0;});
-    h+=`<tr><td title="${name}">${name}${bchip(name)}</td><td>${f(d.del,'nk')}</td><td>${f(d.esc,'nk')}</td>
+    h+=`<tr><td title="${name}">${name}${bchip(name)}</td><td>${f(d.del,'n')}</td><td>${f(d.esc,'n')}</td>
       <td><span class="pill ${escCls(d.escP)}">${f(d.escP,'p')}</span></td>`;
     wd.forEach((v,i)=>{h+=`<td>${f(v,'p')}</td><td>${i>0?badge(v,wd[i-1],true):''}</td>`;});
     h+=`</tr>`;
   });
   h+=`</tbody></table></div></div>`;
   document.getElementById('s-esc').innerHTML=h;
-  lineChart('escOC',lbs,[{label:'Esc %',color:'#ef4444',data:agg.map(d=>d.escP)}],v=>v.toFixed(2)+'%',230);
+  comboChart('escOC',lbs,
+    { label:'Delivery Count', color:'#94a3b8', data:agg.map(d=>d.del) },
+    { label:'Esc %', color:'#ef4444', data:agg.map(d=>d.escP) },
+    v=>Math.round(v).toLocaleString('en-IN'), v=>v.toFixed(2)+'%', 230);
   lineChart('escCC',lbs,top8.map((c,i)=>({label:c,color:PAL[i%10],
     data:weeks.map(wk=>{const r=(DB.wow.week_client[wk]||{})[c]||{del:0,esc:0};return r.del>0?r.esc/r.del*100:null;})})),
     v=>v==null?'':v.toFixed(2)+'%',230);
@@ -571,7 +912,7 @@ function renderLA() {
   </tr></thead><tbody>`;
   doSort(active).forEach(([name,d])=>{
     const wd=weeks.map(wk=>{const r=(DB.wow.week_client[wk]||{})[name]||{esc:0,loss:0};return r.esc>0?r.loss/r.esc*100:0;});
-    h+=`<tr><td title="${name}">${name}${bchip(name)}</td><td>${f(d.del,'nk')}</td><td>${f(d.esc,'nk')}</td><td>${f(d.loss,'nk')}</td>
+    h+=`<tr><td title="${name}">${name}${bchip(name)}</td><td>${f(d.del,'n')}</td><td>${f(d.esc,'n')}</td><td>${f(d.loss,'n')}</td>
       <td><span class="pill ${laCls(d.laP)}">${f(d.laP,'p')}</span></td>`;
     wd.forEach((v,i)=>{h+=`<td>${f(v,'p')}</td><td>${i>0?badge(v,wd[i-1],false):''}</td>`;});
     h+=`</tr>`;
@@ -596,11 +937,11 @@ function renderAOV() {
   const tV=agg.reduce((s,d)=>s+d.lv,0);
   const lbs=agg.map(d=>d.wk.replace('2026-',''));
   let h=`<div class="krow">
-    <div class="kpi k-amber"  style="animation-delay:.0s" ><div class="lb">Overall AOV</div><div class="vl">${f(last.aov,'r')}</div><div class="sb">Loss Amt ÷ Loss Count</div></div>
-    <div class="kpi k-purple" style="animation-delay:.05s"><div class="lb">Overall Approx CPO</div><div class="vl">${f(last.cpo,'r')}</div><div class="sb">Loss Amt ÷ Del Count</div></div>
-    <div class="kpi k-amber"  style="animation-delay:.1s" ><div class="lb">Highest AOV</div><div class="vl" style="font-size:13px;margin-top:3px">${byAov[0]?.[0]||'—'}</div><div class="sb">${f(byAov[0]?.[1]?.aov,'r')}</div></div>
-    <div class="kpi k-purple" style="animation-delay:.15s"><div class="lb">Highest CPO</div><div class="vl" style="font-size:13px;margin-top:3px">${byCpo[0]?.[0]||'—'}</div><div class="sb">${f(byCpo[0]?.[1]?.cpo,'r')}</div></div>
-    <div class="kpi k-teal"   style="animation-delay:.2s" ><div class="lb">Total Loss Value</div><div class="vl">${f(tV,'rk')}</div><div class="sb">${weeks.length} weeks</div></div>
+    <div class="kpi k-amber"  style="animation-delay:.0s" ><div class="lb">Overall AOV</div><div class="vl">${f(last.aov,'cpo')}</div><div class="sb">Loss Amt ÷ Loss Count</div></div>
+    <div class="kpi k-purple" style="animation-delay:.05s"><div class="lb">Overall Approx CPO</div><div class="vl">${f(last.cpo,'cpo')}</div><div class="sb">Loss Amt ÷ Del Count</div></div>
+    <div class="kpi k-amber"  style="animation-delay:.1s" ><div class="lb">Highest AOV</div><div class="vl" style="font-size:13px;margin-top:3px">${byAov[0]?.[0]||'—'}</div><div class="sb">${f(byAov[0]?.[1]?.aov,'cpo')}</div></div>
+    <div class="kpi k-purple" style="animation-delay:.15s"><div class="lb">Highest CPO</div><div class="vl" style="font-size:13px;margin-top:3px">${byCpo[0]?.[0]||'—'}</div><div class="sb">${f(byCpo[0]?.[1]?.cpo,'cpo')}</div></div>
+    <div class="kpi k-teal"   style="animation-delay:.2s" ><div class="lb">Total Loss Value</div><div class="vl">${f(tV,'rv')}</div><div class="sb">${weeks.length} weeks</div></div>
   </div>
   <div class="grid2">
     <div class="card"><div class="card-title">AOV — WoW Trend</div><div style="position:relative;height:230px"><canvas id="aovTC"></canvas></div></div>
@@ -615,18 +956,18 @@ function renderAOV() {
     ${th('name','Client')}${th('del','Del Count')}${th('loss','Loss Count')}${th('lv','Loss Value')}${th('aov','AOV')}${th('cpo','Approx CPO')}${th('laP','LA %')}${th('escP','Esc %')}
   </tr></thead><tbody>`;
   doSort(withData).forEach(([name,d])=>{
-    h+=`<tr><td title="${name}">${name}${bchip(name)}</td><td>${f(d.del,'nk')}</td><td>${f(d.loss,'nk')}</td>
-      <td>${f(d.lv,'rk')}</td><td><strong style="color:#d97706">${f(d.aov,'r')}</strong></td>
-      <td><strong style="color:#7c3aed">${f(d.cpo,'r')}</strong></td>
+    h+=`<tr><td title="${name}">${name}${bchip(name)}</td><td>${f(d.del,'n')}</td><td>${f(d.loss,'n')}</td>
+      <td>${f(d.lv,'rv')}</td><td><strong style="color:#d97706">${f(d.aov,'cpo')}</strong></td>
+      <td><strong style="color:#7c3aed">${f(d.cpo,'cpo')}</strong></td>
       <td><span class="pill ${laCls(d.laP)}">${f(d.laP,'p')}</span></td>
       <td><span class="pill ${escCls(d.escP)}">${f(d.escP,'p')}</span></td></tr>`;
   });
   h+=`</tbody></table></div></div>`;
   document.getElementById('s-aov').innerHTML=h;
-  lineChart('aovTC',lbs,[{label:'AOV',color:'#f59e0b',data:agg.map(d=>d.aov)}],v=>'₹'+Math.round(v).toLocaleString('en-IN'),230);
-  lineChart('cpoTC',lbs,[{label:'CPO',color:'#8b5cf6',data:agg.map(d=>d.cpo)}],v=>'₹'+Math.round(v).toLocaleString('en-IN'),230);
-  hbar('aovBC',byAov.slice(0,20).map(([c])=>c.length>18?c.slice(0,17)+'…':c),byAov.slice(0,20).map(([,d])=>d.aov),byAov.slice(0,20).map((_,i)=>PAL[i%10]+'99'),v=>'₹'+Math.round(v).toLocaleString('en-IN'));
-  setTimeout(()=>hbar('cpoBC',byCpo.slice(0,20).map(([c])=>c.length>18?c.slice(0,17)+'…':c),byCpo.slice(0,20).map(([,d])=>d.cpo),byCpo.slice(0,20).map(([,d])=>d.cpo>=30?'#ef444488':d.cpo>=15?'#f59e0b88':d.cpo>=5?'#3b82f688':'#10b98188'),v=>'₹'+Math.round(v).toLocaleString('en-IN')),80);
+  lineChart('aovTC',lbs,[{label:'AOV',color:'#f59e0b',data:agg.map(d=>d.aov)}],v=>'₹'+v.toFixed(2),230);
+  lineChart('cpoTC',lbs,[{label:'CPO',color:'#8b5cf6',data:agg.map(d=>d.cpo)}],v=>'₹'+v.toFixed(2),230);
+  hbar('aovBC',byAov.slice(0,20).map(([c])=>c.length>18?c.slice(0,17)+'…':c),byAov.slice(0,20).map(([,d])=>d.aov),byAov.slice(0,20).map((_,i)=>PAL[i%10]+'99'),v=>'₹'+v.toFixed(2));
+  setTimeout(()=>hbar('cpoBC',byCpo.slice(0,20).map(([c])=>c.length>18?c.slice(0,17)+'…':c),byCpo.slice(0,20).map(([,d])=>d.cpo),byCpo.slice(0,20).map(([,d])=>d.cpo>=30?'#ef444488':d.cpo>=15?'#f59e0b88':d.cpo>=5?'#3b82f688':'#10b98188'),v=>'₹'+v.toFixed(2)),80);
 }
 
 // ════════ MoM ════════
@@ -642,11 +983,11 @@ function renderMom() {
   const lbs=monthAgg.map(d=>d.mo);
   const top8=clients.slice(0,8);
   let h=`<div class="krow">
-    <div class="kpi k-blue"   style="animation-delay:.0s" ><div class="lb">Latest Month</div><div class="vl">${last.mo}</div><div class="sb">${f(last.del,'nk')} deliveries</div></div>
+    <div class="kpi k-blue"   style="animation-delay:.0s" ><div class="lb">Latest Month</div><div class="vl">${last.mo}</div><div class="sb">${f(last.del,'n')} deliveries</div></div>
     <div class="kpi k-red"    style="animation-delay:.05s"><div class="lb">Esc % Latest</div><div class="vl">${f(last.escP,'p')}</div><div class="sb">${badge(last.escP,prev?.escP,true)} MoM</div></div>
     <div class="kpi k-green"  style="animation-delay:.1s" ><div class="lb">LA % Latest</div><div class="vl">${f(last.laP,'p')}</div><div class="sb">${badge(last.laP,prev?.laP,false)} MoM</div></div>
-    <div class="kpi k-amber"  style="animation-delay:.15s"><div class="lb">AOV Latest</div><div class="vl">${f(last.aov,'r')}</div><div class="sb">Loss Amt ÷ Loss Count</div></div>
-    <div class="kpi k-purple" style="animation-delay:.2s" ><div class="lb">CPO Latest</div><div class="vl">${f(last.cpo,'r')}</div><div class="sb">Loss Amt ÷ Del Count</div></div>
+    <div class="kpi k-amber"  style="animation-delay:.15s"><div class="lb">AOV Latest</div><div class="vl">${f(last.aov,'cpo')}</div><div class="sb">Loss Amt ÷ Loss Count</div></div>
+    <div class="kpi k-purple" style="animation-delay:.2s" ><div class="lb">CPO Latest</div><div class="vl">${f(last.cpo,'cpo')}</div><div class="sb">Loss Amt ÷ Del Count</div></div>
   </div>
   <div class="grid2">
     <div class="card"><div class="card-title">Esc % — MoM</div><div style="position:relative;height:230px"><canvas id="momEC"></canvas></div></div>
@@ -663,17 +1004,17 @@ function renderMom() {
   </tr></thead><tbody>`;
   monthAgg.forEach((d,i)=>{
     const p=i>0?monthAgg[i-1]:null;
-    h+=`<tr><td>${d.mo}</td><td>${f(d.del,'nk')}</td><td>${f(d.esc,'nk')}</td>
+    h+=`<tr><td>${d.mo}</td><td>${f(d.del,'n')}</td><td>${f(d.esc,'n')}</td>
       <td>${f(d.escP,'p')} ${p?badge(d.escP,p.escP,true):''}</td>
-      <td>${f(d.loss,'nk')}</td><td>${f(d.laP,'p')} ${p?badge(d.laP,p.laP,false):''}</td>
-      <td>${f(d.lv,'rk')}</td><td>${f(d.aov,'r')}</td><td>${f(d.cpo,'r')}</td></tr>`;
+      <td>${f(d.loss,'n')}</td><td>${f(d.laP,'p')} ${p?badge(d.laP,p.laP,false):''}</td>
+      <td>${f(d.lv,'rv')}</td><td>${f(d.aov,'cpo')}</td><td>${f(d.cpo,'cpo')}</td></tr>`;
   });
   h+=`</tbody></table></div></div>`;
   document.getElementById('s-mom').innerHTML=h;
   lineChart('momEC',lbs,[{label:'Esc %',color:'#ef4444',data:monthAgg.map(d=>d.escP)}],v=>v.toFixed(2)+'%',230);
   lineChart('momLC',lbs,[{label:'LA %',color:'#10b981',data:monthAgg.map(d=>d.laP)}],v=>v.toFixed(2)+'%',230);
-  lineChart('momAC',lbs,[{label:'AOV',color:'#f59e0b',data:monthAgg.map(d=>d.aov)}],v=>'₹'+Math.round(v).toLocaleString('en-IN'),230);
-  lineChart('momCC',lbs,[{label:'CPO',color:'#8b5cf6',data:monthAgg.map(d=>d.cpo)}],v=>'₹'+Math.round(v).toLocaleString('en-IN'),230);
+  lineChart('momAC',lbs,[{label:'AOV',color:'#f59e0b',data:monthAgg.map(d=>d.aov)}],v=>'₹'+v.toFixed(2),230);
+  lineChart('momCC',lbs,[{label:'CPO',color:'#8b5cf6',data:monthAgg.map(d=>d.cpo)}],v=>'₹'+v.toFixed(2),230);
   lineChart('momCLC',lbs,top8.map((c,i)=>({label:c,color:PAL[i%10],
     data:DB.mom.months.map(m=>{const d=m.clients[c];return d&&d.del>0?d.esc/d.del*100:null;})})),
     v=>v==null?'':v.toFixed(2)+'%',260);
