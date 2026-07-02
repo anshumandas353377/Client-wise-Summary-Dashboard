@@ -48,6 +48,10 @@ input[type=text]{width:130px;}
 .msel-item:hover{background:var(--surface2);}
 .msel-item input[type=checkbox]{cursor:pointer;width:13px;height:13px;accent-color:var(--blue);flex-shrink:0;box-shadow:none;}
 .msel-item.checked{color:var(--text);font-weight:600;}
+.msel-footer{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-top:1px solid var(--border);background:var(--surface2);}
+.msel-count{font-size:10px;color:var(--text3);}
+.msel-apply{font-size:11px;padding:5px 14px;border-radius:6px;border:none;background:var(--blue);color:#fff;cursor:pointer;font-family:inherit;font-weight:600;transition:background .15s;}
+.msel-apply:hover{background:#2563eb;}
 /* period toggle (Week / Month) */
 .period-toggle{display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;}
 .period-btn{font-size:11px;padding:5px 12px;border:none;background:var(--surface);color:var(--text3);cursor:pointer;font-family:inherit;transition:all .15s;}
@@ -182,6 +186,10 @@ tr:last-child td{border-bottom:none;}
               <button onclick="quickMonths(0)">All</button>
             </div>
             <div class="msel-list" id="mofList"></div>
+            <div class="msel-footer">
+              <span id="mofCount" class="msel-count">All months</span>
+              <button class="msel-apply" onclick="applyMonths()">Apply</button>
+            </div>
           </div>
         </div>
       </div>
@@ -255,7 +263,7 @@ tr:last-child td{border-bottom:none;}
 let DB = null, TAB = 'ov', BKT = 'all', SORT = {col:'del',dir:'desc'}, CH = {};
 let PERIOD    = 'week';   // 'week' | 'month'
 let SEL_WEEKS = [], WEEK_MODE = 'last6';
-let SEL_MONTHS= [], MONTH_MODE= 'all';
+let SEL_MONTHS= [], MONTH_MODE= 'all', PENDING_MONTHS = [];
 let SEL_CLIENTS = [], MIN_DEL = 0;
 const PAL = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316','#ec4899','#84cc16','#6366f1'];
 
@@ -285,7 +293,7 @@ async function loadData(retry) {
     if (!meta?.clients?.length) throw new Error('No clients returned. Check /api/data?action=debug');
     DB = {meta, summary, wow, mom};
     SEL_WEEKS  = meta.weeks.slice(-6);  WEEK_MODE  = 'last6';
-    SEL_MONTHS = [];                     MONTH_MODE = 'all';   // empty = all months
+    SEL_MONTHS = [];  PENDING_MONTHS = [];  MONTH_MODE = 'all';   // empty = all months
     SEL_CLIENTS = []; MIN_DEL = 0;
     renderWeekList(); renderMonthList(); renderClientList();
     updateWeekBtnLabel(); updateMonthBtnLabel(); updateClientBtnLabel();
@@ -391,7 +399,14 @@ function toggleMsel(key) {
   const p = document.getElementById(key+'Panel');
   const wasOpen = p.classList.contains('open');
   document.querySelectorAll('.msel-panel').forEach(x=>x.classList.remove('open'));
-  if (!wasOpen) p.classList.add('open');
+  if (!wasOpen) {
+    // Sync draft from committed state when opening month panel
+    if (key === 'mof') {
+      PENDING_MONTHS = [...SEL_MONTHS];
+      renderMonthList();
+    }
+    p.classList.add('open');
+  }
 }
 document.addEventListener('click', e => {
   if (!e.target.closest('.msel')) document.querySelectorAll('.msel-panel').forEach(x=>x.classList.remove('open'));
@@ -428,51 +443,86 @@ function updateWeekBtnLabel() {
 function getWeeks() { return SEL_WEEKS.length ? SEL_WEEKS : (DB ? DB.wow.weeks.slice(-6) : []); }
 
 // ── MONTHS ────────────────────────────────────────────────────
+// ── MONTHS ────────────────────────────────────────────────────
+// PENDING_MONTHS = draft selection (updated on checkbox click, NOT applied yet)
+// SEL_MONTHS     = committed selection (applied to charts/tables)
+// Both empty = "All Months"
+
 function renderMonthList() {
   const box = document.getElementById('mofList'); if (!DB) return;
-  // When SEL_MONTHS is empty it means "All Months" — show all as checked
-  const allSelected = SEL_MONTHS.length === 0;
+  const allSelected = PENDING_MONTHS.length === 0;
   box.innerHTML = [...DB.meta.months].reverse().map(m => {
-    const chk = allSelected || SEL_MONTHS.includes(m);
-    return `<label class="msel-item ${chk?'checked':''}"><input type="checkbox" ${chk?'checked':''} onchange="toggleMonth('${m}')">${m}</label>`;
+    const chk = allSelected || PENDING_MONTHS.includes(m);
+    return `<label class="msel-item ${chk?'checked':''}">
+      <input type="checkbox" ${chk?'checked':''} onchange="draftMonth('${m}')">
+      ${m}
+    </label>`;
   }).join('');
+  updateMonthCount();
 }
-function toggleMonth(m) {
-  MONTH_MODE = 'custom';
-  if (SEL_MONTHS.length === 0) {
-    // Currently "All" — first deselect means: select all EXCEPT this one
-    SEL_MONTHS = DB.meta.months.filter(x => x !== m);
+
+function draftMonth(m) {
+  // Update draft only — do NOT call go() yet
+  if (PENDING_MONTHS.length === 0) {
+    // Currently "All" — deselect means pick all EXCEPT this one
+    PENDING_MONTHS = DB.meta.months.filter(x => x !== m);
   } else {
-    const i = SEL_MONTHS.indexOf(m);
-    if (i === -1) SEL_MONTHS.push(m); else SEL_MONTHS.splice(i, 1);
-    // If all months are now selected, collapse back to "All" (empty = all)
-    if (SEL_MONTHS.length === DB.meta.months.length) {
-      SEL_MONTHS = []; MONTH_MODE = 'all';
-    }
+    const i = PENDING_MONTHS.indexOf(m);
+    if (i === -1) PENDING_MONTHS.push(m); else PENDING_MONTHS.splice(i, 1);
+    // If all months re-selected, collapse back to empty = "All"
+    if (PENDING_MONTHS.length === DB.meta.months.length) PENDING_MONTHS = [];
   }
-  updateMonthBtnLabel(); renderMonthList(); go();
+  renderMonthList();  // re-render checkboxes with new draft state
 }
+
+function applyMonths() {
+  // Commit draft → active selection, then re-render dashboard
+  SEL_MONTHS = [...PENDING_MONTHS];
+  MONTH_MODE = SEL_MONTHS.length === 0 ? 'all' : 'custom';
+  updateMonthBtnLabel();
+  document.querySelectorAll('.msel-panel').forEach(p => p.classList.remove('open'));
+  go();
+}
+
 function quickMonths(n) {
   if (!DB) return;
-  MONTH_MODE = n===0 ? 'all' : 'last'+n;
-  SEL_MONTHS = n===0 ? [] : DB.meta.months.slice(-n);   // empty = all
-  updateMonthBtnLabel(); renderMonthList(); go();
+  MONTH_MODE = n === 0 ? 'all' : 'last' + n;
+  PENDING_MONTHS = n === 0 ? [] : DB.meta.months.slice(-n);
+  SEL_MONTHS = [...PENDING_MONTHS];  // quick buttons apply immediately
+  updateMonthBtnLabel();
+  renderMonthList();
+  document.querySelectorAll('.msel-panel').forEach(p => p.classList.remove('open'));
+  go();
 }
+
+function updateMonthCount() {
+  const el = document.getElementById('mofCount');
+  if (!el) return;
+  if (PENDING_MONTHS.length === 0) {
+    el.textContent = 'All ' + (DB?.meta.months.length||0) + ' months selected';
+  } else {
+    el.textContent = PENDING_MONTHS.length + ' of ' + (DB?.meta.months.length||0) + ' selected';
+  }
+}
+
 function updateMonthBtnLabel() {
   const btn = document.querySelector('#mofWrap .msel-btn');
+  if (!btn) return;
   let txt;
   if (SEL_MONTHS.length === 0 || MONTH_MODE === 'all') {
     txt = 'All Months';
-  } else if (MONTH_MODE !== 'custom') {
-    txt = 'Last ' + SEL_MONTHS.length + ' Months';
+  } else if (MONTH_MODE === 'last3') {
+    txt = 'Last 3 Months';
+  } else if (MONTH_MODE === 'last6') {
+    txt = 'Last 6 Months';
   } else {
-    txt = SEL_MONTHS.length === 1 ? SEL_MONTHS[0] : SEL_MONTHS.length + ' months selected';
+    txt = SEL_MONTHS.length === 1 ? SEL_MONTHS[0] : SEL_MONTHS.length + ' months';
   }
   btn.innerHTML = txt + ' <span class="msel-arr">▾</span>';
 }
+
 function getMonths() {
   if (!DB) return [];
-  // empty SEL_MONTHS = "All Months" (no filter applied)
   return SEL_MONTHS.length > 0 ? SEL_MONTHS : [...DB.meta.months];
 }
 
