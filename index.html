@@ -285,7 +285,7 @@ async function loadData(retry) {
     if (!meta?.clients?.length) throw new Error('No clients returned. Check /api/data?action=debug');
     DB = {meta, summary, wow, mom};
     SEL_WEEKS  = meta.weeks.slice(-6);  WEEK_MODE  = 'last6';
-    SEL_MONTHS = [...meta.months];      MONTH_MODE = 'all';
+    SEL_MONTHS = [];                     MONTH_MODE = 'all';   // empty = all months
     SEL_CLIENTS = []; MIN_DEL = 0;
     renderWeekList(); renderMonthList(); renderClientList();
     updateWeekBtnLabel(); updateMonthBtnLabel(); updateClientBtnLabel();
@@ -430,31 +430,51 @@ function getWeeks() { return SEL_WEEKS.length ? SEL_WEEKS : (DB ? DB.wow.weeks.s
 // ── MONTHS ────────────────────────────────────────────────────
 function renderMonthList() {
   const box = document.getElementById('mofList'); if (!DB) return;
+  // When SEL_MONTHS is empty it means "All Months" — show all as checked
+  const allSelected = SEL_MONTHS.length === 0;
   box.innerHTML = [...DB.meta.months].reverse().map(m => {
-    const chk = SEL_MONTHS.includes(m);
+    const chk = allSelected || SEL_MONTHS.includes(m);
     return `<label class="msel-item ${chk?'checked':''}"><input type="checkbox" ${chk?'checked':''} onchange="toggleMonth('${m}')">${m}</label>`;
   }).join('');
 }
 function toggleMonth(m) {
   MONTH_MODE = 'custom';
-  const i = SEL_MONTHS.indexOf(m);
-  if (i===-1) SEL_MONTHS.push(m); else SEL_MONTHS.splice(i,1);
+  if (SEL_MONTHS.length === 0) {
+    // Currently "All" — first deselect means: select all EXCEPT this one
+    SEL_MONTHS = DB.meta.months.filter(x => x !== m);
+  } else {
+    const i = SEL_MONTHS.indexOf(m);
+    if (i === -1) SEL_MONTHS.push(m); else SEL_MONTHS.splice(i, 1);
+    // If all months are now selected, collapse back to "All" (empty = all)
+    if (SEL_MONTHS.length === DB.meta.months.length) {
+      SEL_MONTHS = []; MONTH_MODE = 'all';
+    }
+  }
   updateMonthBtnLabel(); renderMonthList(); go();
 }
 function quickMonths(n) {
   if (!DB) return;
-  MONTH_MODE = n===0?'all':'last'+n;
-  SEL_MONTHS = n===0 ? [...DB.meta.months] : DB.meta.months.slice(-n);
+  MONTH_MODE = n===0 ? 'all' : 'last'+n;
+  SEL_MONTHS = n===0 ? [] : DB.meta.months.slice(-n);   // empty = all
   updateMonthBtnLabel(); renderMonthList(); go();
 }
 function updateMonthBtnLabel() {
   const btn = document.querySelector('#mofWrap .msel-btn');
-  const txt = MONTH_MODE==='all' ? 'All Months'
-    : (MONTH_MODE!=='custom' ? 'Last '+SEL_MONTHS.length+' Months'
-    : (SEL_MONTHS.length===0?'No months':SEL_MONTHS.length+' months'));
+  let txt;
+  if (SEL_MONTHS.length === 0 || MONTH_MODE === 'all') {
+    txt = 'All Months';
+  } else if (MONTH_MODE !== 'custom') {
+    txt = 'Last ' + SEL_MONTHS.length + ' Months';
+  } else {
+    txt = SEL_MONTHS.length === 1 ? SEL_MONTHS[0] : SEL_MONTHS.length + ' months selected';
+  }
   btn.innerHTML = txt + ' <span class="msel-arr">▾</span>';
 }
-function getMonths() { return SEL_MONTHS.length ? SEL_MONTHS : (DB ? [...DB.meta.months] : []); }
+function getMonths() {
+  if (!DB) return [];
+  // empty SEL_MONTHS = "All Months" (no filter applied)
+  return SEL_MONTHS.length > 0 ? SEL_MONTHS : [...DB.meta.months];
+}
 
 // ── CLIENTS ───────────────────────────────────────────────────
 function renderClientList() {
@@ -495,8 +515,20 @@ function filteredClients() {
     if (!inBkt(c)) return false;
     if (SEL_CLIENTS.length && !SEL_CLIENTS.includes(c)) return false;
     if (sq && !c.toLowerCase().includes(sq)) return false;
-    const s = DB.summary.clients[c];
-    if (!s || s.del < MIN_DEL) return false;
+    if (MIN_DEL > 0) {
+      // Use overall summary for quick check; period-specific del for month mode
+      if (PERIOD === 'month') {
+        const months = getMonths();
+        const periodDel = months.reduce((s, mo) => {
+          const m = DB.mom.months.find(x => x.mo === mo);
+          return s + (m?.clients[c]?.del || 0);
+        }, 0);
+        if (periodDel < MIN_DEL) return false;
+      } else {
+        const s = DB.summary.clients[c];
+        if (!s || s.del < MIN_DEL) return false;
+      }
+    }
     return true;
   });
 }
