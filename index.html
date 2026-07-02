@@ -708,15 +708,33 @@ function getClientPeriodData(c, periodAgg){
 // ════════ OVERVIEW ════════
 function renderOv(){
   const clients=filteredClients();
-  const weeks=getWeeks(), wAgg=weekAgg(weeks,clients);
-  const tD=wAgg.reduce((s,d)=>s+d.del,0), tE=wAgg.reduce((s,d)=>s+d.esc,0);
-  const tL=wAgg.reduce((s,d)=>s+d.loss,0), tV=wAgg.reduce((s,d)=>s+d.lv,0);
+  // Period-aware aggregation
+  const isMonth = PERIOD==='month';
+  const pAgg    = getPeriodAgg(clients);
+  const lbs     = pAgg.map(d=>d.lbl||d.wk?.replace('2026-','')||d.mo||'');
+  const weeks   = getWeeks(); // still needed for weekly-del columns in table
+
+  const tD=pAgg.reduce((s,d)=>s+d.del,0), tE=pAgg.reduce((s,d)=>s+d.esc,0);
+  const tL=pAgg.reduce((s,d)=>s+d.loss,0), tV=pAgg.reduce((s,d)=>s+d.lv,0);
   const eP=tD>0?tE/tD*100:0, lP=tE>0?tL/tE*100:0, cpo=tD>0?tV/tD:0, aov=tL>0?tV/tL:0;
-  const ca=clientAgg(clients,weeks);
+
+  // Client agg over the selected period
+  const ca = isMonth
+    ? (() => {
+        const months=getMonths(), out={};
+        clients.forEach(c=>{
+          let del=0,esc=0,loss=0,lv=0;
+          months.forEach(mo=>{const m=DB.mom.months.find(x=>x.mo===mo);const d=m?.clients[c];if(d){del+=d.del;esc+=d.esc;loss+=d.loss;lv+=d.lv;}});
+          out[c]={del,esc,loss,lv,escP:del>0?esc/del*100:0,laP:esc>0?loss/esc*100:0,cpo:del>0?lv/del:0,aov:loss>0?lv/loss:0};
+        });
+        return out;
+      })()
+    : clientAgg(clients, weeks);
+
   const sorted=doSort(Object.entries(ca));
   const mx=Math.max(...Object.values(ca).map(d=>d.del),1);
-  const lbs=wAgg.map(d=>d.wk.replace('2026-',''));
-  // MoM for WoW/MoM columns in table
+
+  // MoM data for table columns
   const allMo=DB.meta.months;
   const clientMoAgg={};
   clients.forEach(c=>{
@@ -724,47 +742,56 @@ function renderOv(){
       const m=DB.mom.months.find(x=>x.mo===mo);
       const d=m?.clients[c];
       if(!d)return{mo,escP:0,laP:0};
-      const escP=d.del>0?d.esc/d.del*100:0, laP=d.esc>0?d.loss/d.esc*100:0;
-      return{mo,escP,laP};
+      return{mo,escP:d.del>0?d.esc/d.del*100:0,laP:d.esc>0?d.loss/d.esc*100:0};
     });
   });
+
+  const periodLabel = isMonth ? 'Month' : 'Week';
+
   let h=`<div class="krow">
-    <div class="kpi k-blue"   style="animation-delay:.0s"><div class="lb">Total Deliveries</div><div class="vl">${f(tD,'n')}</div><div class="sb">${clients.length} clients · ${weeks.length} wks</div></div>
+    <div class="kpi k-blue"   style="animation-delay:.0s"><div class="lb">Total Deliveries</div><div class="vl">${f(tD,'n')}</div><div class="sb">${clients.length} clients · ${pAgg.length} ${periodLabel.toLowerCase()}s</div></div>
     <div class="kpi k-red"    style="animation-delay:.05s"><div class="lb">Overall Esc %</div><div class="vl">${f(eP,'p')}</div><div class="sb">${f(tE,'n')} escalations</div></div>
     <div class="kpi k-green"  style="animation-delay:.1s"><div class="lb">Overall LA %</div><div class="vl">${f(lP,'p')}</div><div class="sb">${f(tL,'n')} accepted</div></div>
     <div class="kpi k-amber"  style="animation-delay:.15s"><div class="lb">AOV</div><div class="vl">${f(aov,'cpo')}</div><div class="sb">Loss Amt ÷ Loss Count</div></div>
     <div class="kpi k-purple" style="animation-delay:.2s"><div class="lb">Approx CPO</div><div class="vl">${f(cpo,'cpo')}</div><div class="sb">Loss Amt ÷ Del Count</div></div>
-    <div class="kpi k-teal"   style="animation-delay:.25s"><div class="lb">Total Loss Value</div><div class="vl">${f(tV,'rv')}</div><div class="sb">${weeks.length} weeks</div></div>
+    <div class="kpi k-teal"   style="animation-delay:.25s"><div class="lb">Total Loss Value</div><div class="vl">${f(tV,'rv')}</div><div class="sb">${pAgg.length} ${periodLabel.toLowerCase()}s</div></div>
   </div>
   <div class="grid3">
-    <div class="card"><div class="card-title">Deliveries — Week Trend</div><div style="position:relative;height:200px"><canvas id="ovDC"></canvas></div></div>
-    <div class="card"><div class="card-title">Esc % — Week Trend</div><div style="position:relative;height:200px"><canvas id="ovEC"></canvas></div></div>
-    <div class="card"><div class="card-title">LA % — Week Trend</div><div style="position:relative;height:200px"><canvas id="ovLC"></canvas></div></div>
+    <div class="card"><div class="card-title">Deliveries — ${periodLabel} Trend</div><div style="position:relative;height:200px"><canvas id="ovDC"></canvas></div></div>
+    <div class="card"><div class="card-title">Esc % — ${periodLabel} Trend</div><div style="position:relative;height:200px"><canvas id="ovEC"></canvas></div></div>
+    <div class="card"><div class="card-title">LA % — ${periodLabel} Trend</div><div style="position:relative;height:200px"><canvas id="ovLC"></canvas></div></div>
   </div>
   <div class="grid2">
-    <div class="card"><div class="card-title">AOV — Week Trend</div><div style="position:relative;height:200px"><canvas id="ovAC"></canvas></div></div>
-    <div class="card"><div class="card-title">Approx CPO — Week Trend</div><div style="position:relative;height:200px"><canvas id="ovCC"></canvas></div></div>
+    <div class="card"><div class="card-title">AOV — ${periodLabel} Trend</div><div style="position:relative;height:200px"><canvas id="ovAC"></canvas></div></div>
+    <div class="card"><div class="card-title">Approx CPO — ${periodLabel} Trend</div><div style="position:relative;height:200px"><canvas id="ovCC"></canvas></div></div>
   </div>
   <div class="card"><div class="card-title">Client Summary
-    <span class="card-hint">↕ Sort headers · Esc% & LA% show WoW Δ per week + MoM Δ per month</span></div>
+    <span class="card-hint">↕ Sort · ${periodLabel} view · Esc% & LA% show Δ per ${periodLabel.toLowerCase()}</span></div>
   <div class="tw"><table><thead><tr>
     ${th('name','Client')}${th('del','Total Del')}${th('esc','Esc')}${th('escP','Esc %')}
     ${th('loss','Loss')}${th('laP','LA %')}${th('lv','Loss Value')}${th('aov','AOV')}${th('cpo','CPO')}
-    ${weeks.map(w=>`<th style="border-left:1px solid var(--border)">${w.replace('2026-','')} Del</th><th>${w.replace('2026-','')} Esc%</th><th>WoW</th>`).join('')}
-    ${allMo.map(m=>`<th style="border-left:1px solid var(--border)">${m} Esc%</th><th>MoM</th><th>${m} LA%</th><th>MoM</th>`).join('')}
+    ${isMonth
+      ? allMo.map(m=>`<th style="border-left:1px solid var(--border)">${m} Del</th><th>${m} Esc%</th><th>MoM Δ</th><th>${m} LA%</th><th>MoM Δ</th>`).join('')
+      : weeks.map(w=>`<th style="border-left:1px solid var(--border)">${w.replace('2026-','')} Del</th><th>Esc%</th><th>WoW Δ</th>`).join('')
+    }
   </tr></thead><tbody>`;
+
   sorted.forEach(([name,d])=>{
     const bar=`<span class="mbar" style="width:${Math.max(2,d.del/mx*50)}px;background:var(--blue);opacity:.3"></span>`;
-    // weekly esc% WoW columns
-    const wkEsc=weeks.map(wk=>{const r=(DB.wow.week_client[wk]||{})[name]||{del:0,esc:0};return r.del>0?r.esc/r.del*100:0;});
-    const wkDel=weeks.map(wk=>{const r=(DB.wow.week_client[wk]||{})[name]||{del:0};return r.del;});
-    const wkCols=weeks.map((wk,i)=>`<td style="border-left:1px solid var(--border)">${f(wkDel[i],'n')}</td><td>${f(wkEsc[i],'p')}</td><td>${i>0?badge(wkEsc[i],wkEsc[i-1],true):''}</td>`).join('');
-    // monthly MoM columns
-    const moData=clientMoAgg[name]||[];
-    const moCols=moData.map((m,i)=>{
-      const prev=i>0?moData[i-1]:null;
-      return`<td style="border-left:1px solid var(--border)">${f(m.escP,'p')}</td><td>${prev?badge(m.escP,prev.escP,true):''}</td><td>${f(m.laP,'p')}</td><td>${prev?badge(m.laP,prev.laP,false):''}</td>`;
-    }).join('');
+    let periodCols='';
+    if(isMonth){
+      const moData=clientMoAgg[name]||[];
+      periodCols=moData.map((m,i)=>{
+        const mo=DB.mom.months.find(x=>x.mo===m.mo);
+        const del=mo?.clients[name]?.del||0;
+        const prev=i>0?moData[i-1]:null;
+        return`<td style="border-left:1px solid var(--border)">${f(del,'n')}</td><td>${f(m.escP,'p')}</td><td>${prev?badge(m.escP,prev.escP,true):''}</td><td>${f(m.laP,'p')}</td><td>${prev?badge(m.laP,prev.laP,false):''}</td>`;
+      }).join('');
+    } else {
+      const wkEsc=weeks.map(wk=>{const r=(DB.wow.week_client[wk]||{})[name]||{del:0,esc:0};return r.del>0?r.esc/r.del*100:0;});
+      const wkDel=weeks.map(wk=>{const r=(DB.wow.week_client[wk]||{})[name]||{del:0};return r.del;});
+      periodCols=weeks.map((_,i)=>`<td style="border-left:1px solid var(--border)">${f(wkDel[i],'n')}</td><td>${f(wkEsc[i],'p')}</td><td>${i>0?badge(wkEsc[i],wkEsc[i-1],true):''}</td>`).join('');
+    }
     h+=`<tr><td title="${name}">${name}${bchip(name)}</td>
       <td>${f(d.del,'n')}${bar}</td><td>${f(d.esc,'n')}</td>
       <td><span class="pill ${escCls(d.escP)}">${f(d.escP,'p')}</span></td>
@@ -773,29 +800,57 @@ function renderOv(){
       <td>${f(d.lv,'rv')}</td>
       <td>${d.loss>0?f(d.aov,'cpo'):'—'}</td>
       <td>${d.del>0?f(d.cpo,'cpo'):'—'}</td>
-      ${wkCols}${moCols}</tr>`;
+      ${periodCols}</tr>`;
   });
   h+=`</tbody></table></div></div>`;
   document.getElementById('s-ov').innerHTML=h;
-  lineChart('ovDC',lbs,[{label:'Deliveries',color:'#3b82f6',data:wAgg.map(d=>d.del)}],v=>f(v,'n'));
-  lineChart('ovEC',lbs,[{label:'Esc %',color:'#ef4444',data:wAgg.map(d=>d.escP)}],v=>v.toFixed(2)+'%');
-  lineChart('ovLC',lbs,[{label:'LA %',color:'#10b981',data:wAgg.map(d=>d.laP)}],v=>v.toFixed(2)+'%');
-  lineChart('ovAC',lbs,[{label:'AOV',color:'#f59e0b',data:wAgg.map(d=>d.aov)}],v=>'₹'+v.toFixed(2));
-  lineChart('ovCC',lbs,[{label:'CPO',color:'#8b5cf6',data:wAgg.map(d=>d.cpo)}],v=>'₹'+v.toFixed(2));
+  lineChart('ovDC',lbs,[{label:'Deliveries',color:'#3b82f6',data:pAgg.map(d=>d.del)}],v=>f(v,'n'));
+  lineChart('ovEC',lbs,[{label:'Esc %',color:'#ef4444',data:pAgg.map(d=>d.escP)}],v=>v.toFixed(2)+'%');
+  lineChart('ovLC',lbs,[{label:'LA %',color:'#10b981',data:pAgg.map(d=>d.laP)}],v=>v.toFixed(2)+'%');
+  lineChart('ovAC',lbs,[{label:'AOV',color:'#f59e0b',data:pAgg.map(d=>d.aov)}],v=>'₹'+v.toFixed(2));
+  lineChart('ovCC',lbs,[{label:'CPO',color:'#8b5cf6',data:pAgg.map(d=>d.cpo)}],v=>'₹'+v.toFixed(2));
 }
 
 // ════════ ESCALATION % ════════
 function renderEsc(){
-  const clients=filteredClients(), weeks=getWeeks();
-  const agg=weekAgg(weeks,clients);
-  const last=agg[agg.length-1], prev=agg[agg.length-2];
-  const ca=clientAgg(clients,weeks);
+  const clients=filteredClients();
+  const isMonth=PERIOD==='month';
+  const pAgg=getPeriodAgg(clients);
+  const lbs=pAgg.map(d=>d.lbl||d.wk?.replace('2026-','')||d.mo||'');
+  const last=pAgg[pAgg.length-1], prev=pAgg[pAgg.length-2];
+  const periodLabel=isMonth?'Month':'Week';
+  const deltaLabel=isMonth?'MoM Δ':'WoW Δ';
+
+  // Client agg for the selected period
+  const ca=isMonth
+    ?(() => {
+        const months=getMonths(),out={};
+        clients.forEach(c=>{
+          let del=0,esc=0,loss=0,lv=0;
+          months.forEach(mo=>{const m=DB.mom.months.find(x=>x.mo===mo);const d=m?.clients[c];if(d){del+=d.del;esc+=d.esc;loss+=d.loss;lv+=d.lv;}});
+          out[c]={del,esc,loss,lv,escP:del>0?esc/del*100:0,laP:esc>0?loss/esc*100:0,cpo:del>0?lv/del:0,aov:loss>0?lv/loss:0};
+        });
+        return out;
+      })()
+    :clientAgg(clients,getWeeks());
+
   const active=Object.entries(ca).filter(([,d])=>d.del>0);
   const byEsc=[...active].sort((a,b)=>b[1].escP-a[1].escP);
   const top8=byEsc.slice(0,8).map(([c])=>c);
-  const lbs=agg.map(d=>d.wk.replace('2026-',''));
+
+  // Per-period per-client esc% for table
+  const clientPeriodEsc=isMonth
+    ? clients.reduce((acc,c)=>{
+        acc[c]=getMonths().map(mo=>{const m=DB.mom.months.find(x=>x.mo===mo);const d=m?.clients[c];return d&&d.del>0?d.esc/d.del*100:0;});
+        return acc;
+      },{})
+    : clients.reduce((acc,c)=>{
+        acc[c]=getWeeks().map(wk=>{const r=(DB.wow.week_client[wk]||{})[c]||{del:0,esc:0};return r.del>0?r.esc/r.del*100:0;});
+        return acc;
+      },{});
+
   let h=`<div class="krow">
-    <div class="kpi k-red"   style="animation-delay:.0s"><div class="lb">Overall Esc %</div><div class="vl">${f(last.escP,'p')}</div><div class="sb">${badge(last.escP,prev?.escP,true)} vs prev wk</div></div>
+    <div class="kpi k-red"   style="animation-delay:.0s"><div class="lb">Overall Esc %</div><div class="vl">${f(last.escP,'p')}</div><div class="sb">${badge(last.escP,prev?.escP,true)} vs prev ${periodLabel.toLowerCase()}</div></div>
     <div class="kpi k-red"   style="animation-delay:.05s"><div class="lb">Highest Esc %</div><div class="vl" style="font-size:13px;margin-top:3px">${byEsc[0]?.[0]||'—'}</div><div class="sb">${f(byEsc[0]?.[1]?.escP,'p')}</div></div>
     <div class="kpi k-red"   style="animation-delay:.1s"><div class="lb">&gt;5% High</div><div class="vl">${Object.values(ca).filter(d=>d.escP>=5).length}</div><div class="sb"><span class="pill pr">clients</span></div></div>
     <div class="kpi k-amber" style="animation-delay:.15s"><div class="lb">2–5% Watch</div><div class="vl">${Object.values(ca).filter(d=>d.escP>=2&&d.escP<5).length}</div><div class="sb"><span class="pill pa">clients</span></div></div>
@@ -803,38 +858,79 @@ function renderEsc(){
     <div class="kpi k-green" style="animation-delay:.25s"><div class="lb">&lt;1% Good</div><div class="vl">${Object.values(ca).filter(d=>d.del>0&&d.escP<1).length}</div><div class="sb"><span class="pill pg">clients</span></div></div>
   </div>
   <div class="grid2">
-    <div class="card"><div class="card-title">Overall Esc % &amp; Delivery Count — WoW</div><div style="position:relative;height:230px"><canvas id="escOC"></canvas></div></div>
-    <div class="card"><div class="card-title">Top 8 Clients Esc % — WoW</div><div style="position:relative;height:230px"><canvas id="escCC"></canvas></div></div>
+    <div class="card"><div class="card-title">Overall Esc % &amp; Delivery Count — ${periodLabel} on ${periodLabel}</div><div style="position:relative;height:230px"><canvas id="escOC"></canvas></div></div>
+    <div class="card"><div class="card-title">Top 8 Clients Esc % — ${periodLabel} on ${periodLabel}</div><div style="position:relative;height:230px"><canvas id="escCC"></canvas></div></div>
   </div>
-  <div class="card"><div class="card-title">Client-wise Esc % — Week on Week <span class="card-hint">↕ sort</span></div>
+  <div class="card"><div class="card-title">Client-wise Esc % — ${periodLabel} on ${periodLabel} <span class="card-hint">↕ sort</span></div>
   <div class="tw"><table><thead><tr>
     ${th('name','Client')}${th('del','Deliveries')}${th('esc','Esc Count')}${th('escP','Esc %')}
-    ${weeks.map(w=>`<th>${w.replace('2026-','')}</th><th>WoW Δ</th>`).join('')}
+    ${lbs.map(l=>`<th>${l}</th><th>${deltaLabel}</th>`).join('')}
   </tr></thead><tbody>`;
+
   doSort(active).forEach(([name,d])=>{
-    const wd=weeks.map(wk=>{const r=(DB.wow.week_client[wk]||{})[name]||{del:0,esc:0};return r.del>0?r.esc/r.del*100:0;});
+    const pd=clientPeriodEsc[name]||[];
     h+=`<tr><td title="${name}">${name}${bchip(name)}</td><td>${f(d.del,'n')}</td><td>${f(d.esc,'n')}</td>
       <td><span class="pill ${escCls(d.escP)}">${f(d.escP,'p')}</span></td>`;
-    wd.forEach((v,i)=>{h+=`<td>${f(v,'p')}</td><td>${i>0?badge(v,wd[i-1],true):''}</td>`;});
+    pd.forEach((v,i)=>{h+=`<td>${f(v,'p')}</td><td>${i>0?badge(v,pd[i-1],true):''}</td>`;});
     h+=`</tr>`;
   });
   h+=`</tbody></table></div></div>`;
   document.getElementById('s-esc').innerHTML=h;
-  comboChart('escOC',lbs,{label:'Delivery Count',color:'#94a3b8',data:agg.map(d=>d.del)},{label:'Esc %',color:'#ef4444',data:agg.map(d=>d.escP)},v=>f(v,'n'),v=>v.toFixed(2)+'%',230);
-  lineChart('escCC',lbs,top8.map((c,i)=>({label:c,color:PAL[i%10],data:weeks.map(wk=>{const r=(DB.wow.week_client[wk]||{})[c]||{del:0,esc:0};return r.del>0?r.esc/r.del*100:null;})})),v=>v==null?'':v.toFixed(2)+'%',230);
+
+  comboChart('escOC',lbs,
+    {label:'Delivery Count',color:'#94a3b8',data:pAgg.map(d=>d.del)},
+    {label:'Esc %',color:'#ef4444',data:pAgg.map(d=>d.escP)},
+    v=>f(v,'n'),v=>v.toFixed(2)+'%',230);
+
+  if(isMonth){
+    lineChart('escCC',lbs,top8.map((c,i)=>({label:c,color:PAL[i%10],
+      data:getMonths().map(mo=>{const m=DB.mom.months.find(x=>x.mo===mo);const d=m?.clients[c];return d&&d.del>0?d.esc/d.del*100:null;})})),
+      v=>v==null?'':v.toFixed(2)+'%',230);
+  } else {
+    const weeks=getWeeks();
+    lineChart('escCC',lbs,top8.map((c,i)=>({label:c,color:PAL[i%10],
+      data:weeks.map(wk=>{const r=(DB.wow.week_client[wk]||{})[c]||{del:0,esc:0};return r.del>0?r.esc/r.del*100:null;})})),
+      v=>v==null?'':v.toFixed(2)+'%',230);
+  }
 }
 
 // ════════ LOSS ACCEPTED % ════════
 function renderLA(){
-  const clients=filteredClients(), weeks=getWeeks();
-  const agg=weekAgg(weeks,clients);
-  const last=agg[agg.length-1], prev=agg[agg.length-2];
-  const ca=clientAgg(clients,weeks);
+  const clients=filteredClients();
+  const isMonth=PERIOD==='month';
+  const pAgg=getPeriodAgg(clients);
+  const lbs=pAgg.map(d=>d.lbl||d.wk?.replace('2026-','')||d.mo||'');
+  const last=pAgg[pAgg.length-1], prev=pAgg[pAgg.length-2];
+  const periodLabel=isMonth?'Month':'Week';
+  const deltaLabel=isMonth?'MoM Δ':'WoW Δ';
+
+  const ca=isMonth
+    ?(() => {
+        const months=getMonths(),out={};
+        clients.forEach(c=>{
+          let del=0,esc=0,loss=0,lv=0;
+          months.forEach(mo=>{const m=DB.mom.months.find(x=>x.mo===mo);const d=m?.clients[c];if(d){del+=d.del;esc+=d.esc;loss+=d.loss;lv+=d.lv;}});
+          out[c]={del,esc,loss,lv,escP:del>0?esc/del*100:0,laP:esc>0?loss/esc*100:0,cpo:del>0?lv/del:0,aov:loss>0?lv/loss:0};
+        });
+        return out;
+      })()
+    :clientAgg(clients,getWeeks());
+
   const active=Object.entries(ca).filter(([,d])=>d.esc>0);
   const byLA=[...active].sort((a,b)=>b[1].laP-a[1].laP).slice(0,20);
-  const lbs=agg.map(d=>d.wk.replace('2026-',''));
+
+  const clientPeriodLA=isMonth
+    ?clients.reduce((acc,c)=>{
+        acc[c]=getMonths().map(mo=>{const m=DB.mom.months.find(x=>x.mo===mo);const d=m?.clients[c];return d&&d.esc>0?d.loss/d.esc*100:0;});
+        return acc;
+      },{})
+    :clients.reduce((acc,c)=>{
+        acc[c]=getWeeks().map(wk=>{const r=(DB.wow.week_client[wk]||{})[c]||{esc:0,loss:0};return r.esc>0?r.loss/r.esc*100:0;});
+        return acc;
+      },{});
+
   let h=`<div class="krow">
-    <div class="kpi k-green"  style="animation-delay:.0s"><div class="lb">Overall LA %</div><div class="vl">${f(last.laP,'p')}</div><div class="sb">${badge(last.laP,prev?.laP,false)} vs prev wk</div></div>
+    <div class="kpi k-green"  style="animation-delay:.0s"><div class="lb">Overall LA %</div><div class="vl">${f(last.laP,'p')}</div><div class="sb">${badge(last.laP,prev?.laP,false)} vs prev ${periodLabel.toLowerCase()}</div></div>
     <div class="kpi k-green"  style="animation-delay:.05s"><div class="lb">Highest LA %</div><div class="vl" style="font-size:13px;margin-top:3px">${byLA[0]?.[0]||'—'}</div><div class="sb">${f(byLA[0]?.[1]?.laP,'p')}</div></div>
     <div class="kpi k-green"  style="animation-delay:.1s"><div class="lb">&gt;70% Excellent</div><div class="vl">${active.filter(([,d])=>d.laP>=70).length}</div><div class="sb"><span class="pill pg">clients</span></div></div>
     <div class="kpi k-blue"   style="animation-delay:.15s"><div class="lb">40–70% Good</div><div class="vl">${active.filter(([,d])=>d.laP>=40&&d.laP<70).length}</div><div class="sb"><span class="pill pb">clients</span></div></div>
@@ -842,24 +938,26 @@ function renderLA(){
     <div class="kpi k-red"    style="animation-delay:.25s"><div class="lb">&lt;20% Low</div><div class="vl">${active.filter(([,d])=>d.laP<20).length}</div><div class="sb"><span class="pill pr">clients</span></div></div>
   </div>
   <div class="grid2">
-    <div class="card"><div class="card-title">Overall LA % — WoW</div><div style="position:relative;height:230px"><canvas id="laOC"></canvas></div></div>
+    <div class="card"><div class="card-title">Overall LA % — ${periodLabel} on ${periodLabel}</div><div style="position:relative;height:230px"><canvas id="laOC"></canvas></div></div>
     <div class="card"><div class="card-title">Top 20 by LA % (bar)</div><div style="position:relative;height:230px"><canvas id="laBrC"></canvas></div></div>
   </div>
-  <div class="card"><div class="card-title">Client-wise LA % — Week on Week <span class="card-hint">↕ sort</span></div>
+  <div class="card"><div class="card-title">Client-wise LA % — ${periodLabel} on ${periodLabel} <span class="card-hint">↕ sort</span></div>
   <div class="tw"><table><thead><tr>
     ${th('name','Client')}${th('del','Deliveries')}${th('esc','Esc Count')}${th('loss','Loss Count')}${th('laP','LA %')}
-    ${weeks.map(w=>`<th>${w.replace('2026-','')}</th><th>WoW Δ</th>`).join('')}
+    ${lbs.map(l=>`<th>${l}</th><th>${deltaLabel}</th>`).join('')}
   </tr></thead><tbody>`;
+
   doSort(active).forEach(([name,d])=>{
-    const wd=weeks.map(wk=>{const r=(DB.wow.week_client[wk]||{})[name]||{esc:0,loss:0};return r.esc>0?r.loss/r.esc*100:0;});
+    const pd=clientPeriodLA[name]||[];
     h+=`<tr><td title="${name}">${name}${bchip(name)}</td><td>${f(d.del,'n')}</td><td>${f(d.esc,'n')}</td><td>${f(d.loss,'n')}</td>
       <td><span class="pill ${laCls(d.laP)}">${f(d.laP,'p')}</span></td>`;
-    wd.forEach((v,i)=>{h+=`<td>${f(v,'p')}</td><td>${i>0?badge(v,wd[i-1],false):''}</td>`;});
+    pd.forEach((v,i)=>{h+=`<td>${f(v,'p')}</td><td>${i>0?badge(v,pd[i-1],false):''}</td>`;});
     h+=`</tr>`;
   });
   h+=`</tbody></table></div></div>`;
   document.getElementById('s-la').innerHTML=h;
-  lineChart('laOC',lbs,[{label:'LA %',color:'#10b981',data:agg.map(d=>d.laP)}],v=>v.toFixed(2)+'%',230);
+
+  lineChart('laOC',lbs,[{label:'LA %',color:'#10b981',data:pAgg.map(d=>d.laP)}],v=>v.toFixed(2)+'%',230);
   hbar('laBrC',byLA.map(([c])=>c.length>18?c.slice(0,17)+'…':c),byLA.map(([,d])=>d.laP),
     byLA.map(([,d])=>d.laP>=70?'#10b98188':d.laP>=40?'#3b82f688':d.laP>=20?'#f59e0b88':'#ef444488'),
     v=>v.toFixed(1)+'%',230);
@@ -867,31 +965,46 @@ function renderLA(){
 
 // ════════ AOV & CPO ════════
 function renderAOV(){
-  const clients=filteredClients(), weeks=getWeeks();
-  const agg=weekAgg(weeks,clients);
-  const last=agg[agg.length-1];
-  const ca=clientAgg(clients,weeks);
+  const clients=filteredClients();
+  const isMonth=PERIOD==='month';
+  const pAgg=getPeriodAgg(clients);
+  const lbs=pAgg.map(d=>d.lbl||d.wk?.replace('2026-','')||d.mo||'');
+  const last=pAgg[pAgg.length-1];
+  const periodLabel=isMonth?'Month':'Week';
+
+  const ca=isMonth
+    ?(() => {
+        const months=getMonths(),out={};
+        clients.forEach(c=>{
+          let del=0,esc=0,loss=0,lv=0;
+          months.forEach(mo=>{const m=DB.mom.months.find(x=>x.mo===mo);const d=m?.clients[c];if(d){del+=d.del;esc+=d.esc;loss+=d.loss;lv+=d.lv;}});
+          out[c]={del,esc,loss,lv,escP:del>0?esc/del*100:0,laP:esc>0?loss/esc*100:0,cpo:del>0?lv/del:0,aov:loss>0?lv/loss:0};
+        });
+        return out;
+      })()
+    :clientAgg(clients,getWeeks());
+
   const withData=Object.entries(ca).filter(([,d])=>d.loss>0&&d.del>0);
   const byAov=[...withData].sort((a,b)=>b[1].aov-a[1].aov);
   const byCpo=[...withData].sort((a,b)=>b[1].cpo-a[1].cpo);
-  const tV=agg.reduce((s,d)=>s+d.lv,0);
-  const lbs=agg.map(d=>d.wk.replace('2026-',''));
+  const tV=pAgg.reduce((s,d)=>s+d.lv,0);
+
   let h=`<div class="krow">
     <div class="kpi k-amber"  style="animation-delay:.0s"><div class="lb">Overall AOV</div><div class="vl">${f(last.aov,'cpo')}</div><div class="sb">Loss Amt ÷ Loss Count</div></div>
     <div class="kpi k-purple" style="animation-delay:.05s"><div class="lb">Overall Approx CPO</div><div class="vl">${f(last.cpo,'cpo')}</div><div class="sb">Loss Amt ÷ Del Count</div></div>
     <div class="kpi k-amber"  style="animation-delay:.1s"><div class="lb">Highest AOV</div><div class="vl" style="font-size:13px;margin-top:3px">${byAov[0]?.[0]||'—'}</div><div class="sb">${f(byAov[0]?.[1]?.aov,'cpo')}</div></div>
     <div class="kpi k-purple" style="animation-delay:.15s"><div class="lb">Highest CPO</div><div class="vl" style="font-size:13px;margin-top:3px">${byCpo[0]?.[0]||'—'}</div><div class="sb">${f(byCpo[0]?.[1]?.cpo,'cpo')}</div></div>
-    <div class="kpi k-teal"   style="animation-delay:.2s"><div class="lb">Total Loss Value</div><div class="vl">${f(tV,'rv')}</div><div class="sb">${weeks.length} weeks</div></div>
+    <div class="kpi k-teal"   style="animation-delay:.2s"><div class="lb">Total Loss Value</div><div class="vl">${f(tV,'rv')}</div><div class="sb">${pAgg.length} ${periodLabel.toLowerCase()}s</div></div>
   </div>
   <div class="grid2">
-    <div class="card"><div class="card-title">AOV — WoW Trend</div><div style="position:relative;height:230px"><canvas id="aovTC"></canvas></div></div>
-    <div class="card"><div class="card-title">Approx CPO — WoW Trend</div><div style="position:relative;height:230px"><canvas id="cpoTC"></canvas></div></div>
+    <div class="card"><div class="card-title">AOV — ${periodLabel} Trend</div><div style="position:relative;height:230px"><canvas id="aovTC"></canvas></div></div>
+    <div class="card"><div class="card-title">Approx CPO — ${periodLabel} Trend</div><div style="position:relative;height:230px"><canvas id="cpoTC"></canvas></div></div>
   </div>
   <div class="grid2">
     <div class="card"><div class="card-title">Top 20 by AOV</div><div style="position:relative;height:280px"><canvas id="aovBC"></canvas></div></div>
     <div class="card"><div class="card-title">Top 20 by Approx CPO</div><div style="position:relative;height:280px"><canvas id="cpoBC"></canvas></div></div>
   </div>
-  <div class="card"><div class="card-title">Client-wise AOV &amp; CPO <span class="card-hint">↕ sort</span></div>
+  <div class="card"><div class="card-title">Client-wise AOV &amp; CPO <span class="card-hint">↕ sort · ${periodLabel} view</span></div>
   <div class="tw"><table><thead><tr>
     ${th('name','Client')}${th('del','Del Count')}${th('loss','Loss Count')}${th('lv','Loss Value')}${th('aov','AOV')}${th('cpo','Approx CPO')}${th('laP','LA %')}${th('escP','Esc %')}
   </tr></thead><tbody>`;
@@ -904,8 +1017,8 @@ function renderAOV(){
   });
   h+=`</tbody></table></div></div>`;
   document.getElementById('s-aov').innerHTML=h;
-  lineChart('aovTC',lbs,[{label:'AOV',color:'#f59e0b',data:agg.map(d=>d.aov)}],v=>'₹'+v.toFixed(2),230);
-  lineChart('cpoTC',lbs,[{label:'CPO',color:'#8b5cf6',data:agg.map(d=>d.cpo)}],v=>'₹'+v.toFixed(2),230);
+  lineChart('aovTC',lbs,[{label:'AOV',color:'#f59e0b',data:pAgg.map(d=>d.aov)}],v=>'₹'+v.toFixed(2),230);
+  lineChart('cpoTC',lbs,[{label:'CPO',color:'#8b5cf6',data:pAgg.map(d=>d.cpo)}],v=>'₹'+v.toFixed(2),230);
   hbar('aovBC',byAov.slice(0,20).map(([c])=>c.length>18?c.slice(0,17)+'…':c),byAov.slice(0,20).map(([,d])=>d.aov),byAov.slice(0,20).map((_,i)=>PAL[i%10]+'99'),v=>'₹'+v.toFixed(2));
   setTimeout(()=>hbar('cpoBC',byCpo.slice(0,20).map(([c])=>c.length>18?c.slice(0,17)+'…':c),byCpo.slice(0,20).map(([,d])=>d.cpo),byCpo.slice(0,20).map(([,d])=>d.cpo>=30?'#ef444488':d.cpo>=15?'#f59e0b88':d.cpo>=5?'#3b82f688':'#10b98188'),v=>'₹'+v.toFixed(2)),80);
 }
