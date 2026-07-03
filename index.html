@@ -363,28 +363,40 @@ function isRecent(isoStr, secs) {
 async function renderViewers() {
   const el = document.getElementById('s-viewers');
   el.innerHTML = '<div class="loader"><div class="spinner"></div>Loading view history…</div>';
+
+  // First, fire a log for THIS view (ensures at least 1 entry exists after refresh)
+  await logPageView();
+
   try {
     const data = await apiFetch('views');
-    const views = data.views || [];
-    const total = data.total || 0;
-    const active = data.active || 0;
+
+    // If Apps Script returns an error (old deployment without logView/getViews)
+    if (data.error) {
+      el.innerHTML = `<div class="err-box">
+        <strong>⚠ Apps Script not updated yet</strong><br>
+        Error: ${data.error}<br><br>
+        <strong>Fix:</strong><br>
+        1. Open Apps Script editor → paste the new <strong>Code.gs</strong> → Save<br>
+        2. <strong>Deploy → New deployment</strong> → Web app → Execute as Me → Access Anyone<br>
+        3. Come back and click <strong>👁 View History</strong> tab again<br><br>
+        <em>The new Code.gs adds <code>logView()</code> and <code>getViews()</code> functions needed for this feature.</em>
+      </div>`;
+      return;
+    }
+
+    const views       = data.views || [];
+    const total       = data.total || 0;
+    const active      = data.active || 0;
     const todayUnique = data.todayUnique || 0;
 
-    // Group by date for timeline
-    const byDate = {};
-    views.forEach(v => {
-      const d = v.date || 'Unknown';
-      if (!byDate[d]) byDate[d] = [];
-      byDate[d].push(v);
-    });
-
-    // Browser breakdown
-    const browserCount = {};
-    const osCount = {};
+    // Browser & OS breakdown
+    const browserCount = {}, osCount = {};
     views.forEach(v => {
       browserCount[v.browser] = (browserCount[v.browser]||0) + 1;
-      osCount[v.os] = (osCount[v.os]||0) + 1;
+      osCount[v.os]           = (osCount[v.os]||0) + 1;
     });
+
+    const totalShown = views.length || 1; // avoid /0
 
     let h = `
     <div class="viewer-grid">
@@ -399,91 +411,110 @@ async function renderViewers() {
         <div class="sb">${data.today || '—'}</div>
       </div>
       <div class="v-kpi" style="border-top:3px solid var(--purple)">
-        <div class="lb">Total Views (all time)</div>
+        <div class="lb">Total Views (All Time)</div>
         <div class="vl">${total.toLocaleString('en-IN')}</div>
-        <div class="sb">since tracking started</div>
+        <div class="sb">rows in ViewLog sheet</div>
       </div>
       <div class="v-kpi" style="border-top:3px solid var(--amber)">
-        <div class="lb">Unique Sessions (shown)</div>
+        <div class="lb">Unique Sessions Shown</div>
         <div class="vl">${new Set(views.map(v=>v.sid)).size}</div>
-        <div class="sb">in last 100 views</div>
+        <div class="sb">in last ${views.length} views</div>
       </div>
-    </div>
+    </div>`;
 
-    <div class="grid2">
-      <div class="card">
-        <div class="card-title">Browser Breakdown</div>
-        <table><thead><tr><th style="text-align:left">Browser</th><th>Views</th><th>Share</th></tr></thead><tbody>
-        ${Object.entries(browserCount).sort((a,b)=>b[1]-a[1]).map(([b,n])=>`
-          <tr>
-            <td>${browserIcon(b)} ${b}</td>
-            <td style="text-align:right">${n}</td>
-            <td style="text-align:right">
-              <div style="display:flex;align-items:center;justify-content:flex-end;gap:6px">
-                <div style="width:60px;background:var(--border);border-radius:3px;height:5px">
-                  <div style="width:${Math.round(n/views.length*100)}%;background:var(--blue);height:5px;border-radius:3px"></div>
+    if (views.length === 0) {
+      h += `<div class="card" style="text-align:center;padding:40px;color:var(--text3)">
+        <div style="font-size:40px;margin-bottom:12px">👁</div>
+        <strong>No views recorded yet</strong><br><br>
+        Views are logged each time someone opens the dashboard.<br>
+        Try clicking <strong>⟳ Refresh</strong> below — the current page view is being logged now.<br><br>
+        <button class="act-btn" onclick="renderViewers()" style="margin-top:8px">⟳ Refresh Now</button>
+      </div>`;
+    } else {
+      h += `
+      <div class="grid2">
+        <div class="card">
+          <div class="card-title">Browser Breakdown</div>
+          <table><thead><tr>
+            <th style="text-align:left">Browser</th>
+            <th style="text-align:right">Views</th>
+            <th style="text-align:right">Share</th>
+          </tr></thead><tbody>
+          ${Object.entries(browserCount).sort((a,b)=>b[1]-a[1]).map(([b,n])=>`
+            <tr>
+              <td>${browserIcon(b)} ${b}</td>
+              <td style="text-align:right">${n}</td>
+              <td style="text-align:right">
+                <div style="display:flex;align-items:center;justify-content:flex-end;gap:6px">
+                  <div style="width:60px;background:var(--border);border-radius:3px;height:5px">
+                    <div style="width:${Math.round(n/totalShown*100)}%;background:var(--blue);height:5px;border-radius:3px"></div>
+                  </div>
+                  ${Math.round(n/totalShown*100)}%
                 </div>
-                ${Math.round(n/views.length*100)}%
-              </div>
-            </td>
-          </tr>`).join('')}
-        </tbody></table>
-      </div>
-      <div class="card">
-        <div class="card-title">OS / Device Breakdown</div>
-        <table><thead><tr><th style="text-align:left">OS</th><th>Views</th><th>Share</th></tr></thead><tbody>
-        ${Object.entries(osCount).sort((a,b)=>b[1]-a[1]).map(([o,n])=>`
-          <tr>
-            <td>${osIcon(o)} ${o}</td>
-            <td style="text-align:right">${n}</td>
-            <td style="text-align:right">
-              <div style="display:flex;align-items:center;justify-content:flex-end;gap:6px">
-                <div style="width:60px;background:var(--border);border-radius:3px;height:5px">
-                  <div style="width:${Math.round(n/views.length*100)}%;background:var(--purple);height:5px;border-radius:3px"></div>
+              </td>
+            </tr>`).join('')}
+          </tbody></table>
+        </div>
+        <div class="card">
+          <div class="card-title">OS / Device Breakdown</div>
+          <table><thead><tr>
+            <th style="text-align:left">OS</th>
+            <th style="text-align:right">Views</th>
+            <th style="text-align:right">Share</th>
+          </tr></thead><tbody>
+          ${Object.entries(osCount).sort((a,b)=>b[1]-a[1]).map(([o,n])=>`
+            <tr>
+              <td>${osIcon(o)} ${o}</td>
+              <td style="text-align:right">${n}</td>
+              <td style="text-align:right">
+                <div style="display:flex;align-items:center;justify-content:flex-end;gap:6px">
+                  <div style="width:60px;background:var(--border);border-radius:3px;height:5px">
+                    <div style="width:${Math.round(n/totalShown*100)}%;background:var(--purple);height:5px;border-radius:3px"></div>
+                  </div>
+                  ${Math.round(n/totalShown*100)}%
                 </div>
-                ${Math.round(n/views.length*100)}%
-              </div>
-            </td>
-          </tr>`).join('')}
-        </tbody></table>
+              </td>
+            </tr>`).join('')}
+          </tbody></table>
+        </div>
       </div>
-    </div>
 
-    <div class="card">
-      <div class="card-title">
-        Recent View History
-        <span class="card-hint">last 100 views · auto-refreshes every 60s · logged to ViewLog sheet</span>
-        <button class="act-btn" onclick="renderViewers()" style="font-size:10px;padding:3px 10px">⟳ Refresh</button>
-      </div>
-      <div class="tw">
-      <table><thead><tr>
-        <th style="text-align:left">When</th>
-        <th style="text-align:left">Date</th>
-        <th style="text-align:left">Time</th>
-        <th style="text-align:left">Session ID</th>
-        <th style="text-align:left">Browser</th>
-        <th style="text-align:left">OS</th>
-        <th style="text-align:left">Device</th>
-        <th style="text-align:left">Status</th>
-      </tr></thead><tbody>
-      ${views.length === 0 ? '<tr><td colspan="8" style="text-align:center;color:var(--text3);padding:20px">No views recorded yet</td></tr>' :
-        views.map(v => {
+      <div class="card">
+        <div class="card-title">
+          Recent View History
+          <span class="card-hint">last 100 views · auto-refreshes every 60s · logged to ViewLog sheet</span>
+          <button class="act-btn" onclick="renderViewers()" style="font-size:10px;padding:3px 10px">⟳ Refresh</button>
+        </div>
+        <div class="tw">
+        <table><thead><tr>
+          <th style="text-align:left">When</th>
+          <th style="text-align:left">Date</th>
+          <th style="text-align:left">Time</th>
+          <th style="text-align:left">Session ID</th>
+          <th style="text-align:left">Browser</th>
+          <th style="text-align:left">OS</th>
+          <th style="text-align:left">Device</th>
+          <th style="text-align:left">Status</th>
+        </tr></thead><tbody>
+        ${views.map(v => {
           const live = isRecent(v.ts, 300);
           return `<tr>
-            <td style="color:var(--text3);font-size:11px">${timeAgo(v.ts)}</td>
-            <td>${v.date}</td>
-            <td>${v.time}</td>
+            <td style="color:var(--text3);font-size:11px;white-space:nowrap">${timeAgo(v.ts)}</td>
+            <td style="white-space:nowrap">${v.date}</td>
+            <td style="white-space:nowrap">${v.time}</td>
             <td style="font-family:monospace;font-size:10px;color:var(--text3)">${v.sid}</td>
             <td>${browserIcon(v.browser)} ${v.browser}</td>
             <td>${osIcon(v.os)} ${v.os}</td>
             <td>${deviceIcon(v.device)} ${v.device}</td>
-            <td>${live ? '<span class="badge-live">● Live</span>' : '<span style="font-size:10px;color:var(--text3)">Viewed</span>'}</td>
+            <td>${live
+              ? '<span class="badge-live">● Live</span>'
+              : '<span style="font-size:10px;color:var(--text3)">Viewed</span>'}</td>
           </tr>`;
-        }).join('')
-      }
-      </tbody></table>
-      </div>
-    </div>`;
+        }).join('')}
+        </tbody></table>
+        </div>
+      </div>`;
+    }
 
     el.innerHTML = h;
 
@@ -491,13 +522,19 @@ async function renderViewers() {
     if (window._viewerRefreshTimer) clearInterval(window._viewerRefreshTimer);
     window._viewerRefreshTimer = setInterval(() => {
       if (TAB === 'viewers') renderViewers();
-      else clearInterval(window._viewerRefreshTimer);
+      else { clearInterval(window._viewerRefreshTimer); window._viewerRefreshTimer = null; }
     }, 60000);
 
   } catch (e) {
     console.error('[dash] renderViewers failed:', e);
-    el.innerHTML = `<div class="err-box"><strong>⚠ Could not load view history</strong><br>${e.message}<br><br>
-      Make sure Code.gs is updated with the <code>logView</code> and <code>getViews</code> functions and redeployed.</div>`;
+    el.innerHTML = `<div class="err-box">
+      <strong>⚠ Could not load view history</strong><br>${e.message}<br><br>
+      <strong>Most likely cause:</strong> The new <code>Code.gs</code> hasn't been deployed yet.<br><br>
+      <strong>Steps:</strong><br>
+      1. Open Apps Script → paste new Code.gs → Save<br>
+      2. Deploy → New deployment → Web app → Execute as Me → Access Anyone<br>
+      3. Click <button class="act-btn" onclick="renderViewers()" style="font-size:10px;padding:2px 8px">⟳ Try Again</button>
+    </div>`;
   }
 }
 
