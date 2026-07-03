@@ -140,6 +140,16 @@ tr:last-child td{border-bottom:none;}
 @keyframes rowSlide{from{opacity:0;transform:translateX(-8px);}to{opacity:1;transform:translateX(0);}}
 @keyframes spin{to{transform:rotate(360deg);}}
 .sec{display:none;}.sec.on{display:block;}
+/* viewer panel */
+.live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#10b981;margin-right:5px;animation:pulse 2s infinite;}
+@keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 #10b98166;}50%{opacity:.8;box-shadow:0 0 0 6px #10b98100;}}
+.viewer-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px;}
+.v-kpi{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;box-shadow:var(--sh);animation:fadeUp .4s ease both;}
+.v-kpi .lb{font-size:10px;color:var(--text3);margin-bottom:5px;text-transform:uppercase;letter-spacing:.05em;}
+.v-kpi .vl{font-size:26px;font-weight:700;line-height:1;}
+.v-kpi .sb{font-size:10px;color:var(--text3);margin-top:4px;}
+.badge-live{font-size:10px;background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;padding:2px 8px;border-radius:20px;font-weight:700;}
+.browser-icon{font-size:14px;margin-right:4px;}
 </style>
 </head>
 <body>
@@ -172,6 +182,10 @@ tr:last-child td{border-bottom:none;}
               <button onclick="quickWeeks(0)">All</button>
             </div>
             <div class="msel-list" id="wkfList"></div>
+            <div class="msel-footer">
+              <span id="wkfCount" class="msel-count">Last 6 weeks</span>
+              <button class="msel-apply" onclick="applyWeeks()">Apply</button>
+            </div>
           </div>
         </div>
       </div>
@@ -197,13 +211,17 @@ tr:last-child td{border-bottom:none;}
       <div class="fg"><label>Client</label>
         <div class="msel" id="clfWrap">
           <button type="button" class="msel-btn" onclick="toggleMsel('clf')">All Clients <span class="msel-arr">▾</span></button>
-          <div class="msel-panel" id="clfPanel" style="min-width:240px">
-            <input type="text" class="msel-search" id="clfSearch" placeholder="Filter clients…" oninput="renderClientList()">
+          <div class="msel-panel" id="clfPanel" style="min-width:260px">
+            <input type="text" class="msel-search" id="clfSearch" placeholder="Search clients…" oninput="renderClientList()">
             <div class="msel-quick">
-              <button onclick="selectAllClients(true)">Select All</button>
-              <button onclick="selectAllClients(false)">Clear</button>
+              <button onclick="quickClients(true)">Select All</button>
+              <button onclick="quickClients(false)">Clear</button>
             </div>
             <div class="msel-list" id="clfList"></div>
+            <div class="msel-footer">
+              <span id="clfCount" class="msel-count">All clients</span>
+              <button class="msel-apply" onclick="applyClients()">Apply</button>
+            </div>
           </div>
         </div>
       </div>
@@ -250,13 +268,15 @@ tr:last-child td{border-bottom:none;}
   <button class="tab"    onclick="sw('la',this)">✅ Loss Accepted %</button>
   <button class="tab"    onclick="sw('aov',this)">💰 AOV &amp; CPO</button>
   <button class="tab"    onclick="sw('trend',this)">📅 Trend View</button>
+  <button class="tab"    onclick="sw('viewers',this)">👁 View History</button>
 </div>
 <div class="body">
-  <div id="s-ov"    class="sec on"><div class="loader"><div class="spinner"></div>Loading…</div></div>
-  <div id="s-esc"   class="sec"></div>
-  <div id="s-la"    class="sec"></div>
-  <div id="s-aov"   class="sec"></div>
-  <div id="s-trend" class="sec"></div>
+  <div id="s-ov"      class="sec on"><div class="loader"><div class="spinner"></div>Loading…</div></div>
+  <div id="s-esc"     class="sec"></div>
+  <div id="s-la"      class="sec"></div>
+  <div id="s-aov"     class="sec"></div>
+  <div id="s-trend"   class="sec"></div>
+  <div id="s-viewers" class="sec"></div>
 </div>
 <script>
 // ── STATE ─────────────────────────────────────────────────────
@@ -267,7 +287,221 @@ let SEL_MONTHS= [], MONTH_MODE= 'all', PENDING_MONTHS = [];
 let SEL_CLIENTS = [], MIN_DEL = 0;
 const PAL = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316','#ec4899','#84cc16','#6366f1'];
 
-// ── FETCH ─────────────────────────────────────────────────────
+// ── VIEW TRACKING ─────────────────────────────────────────────
+// Detect browser, OS, device from userAgent
+function detectEnv() {
+  const ua = navigator.userAgent;
+  let browser = 'Other', os = 'Other', device = 'Desktop';
+
+  if (/Edg\//.test(ua))          browser = 'Edge';
+  else if (/OPR\//.test(ua))     browser = 'Opera';
+  else if (/Chrome\//.test(ua))  browser = 'Chrome';
+  else if (/Firefox\//.test(ua)) browser = 'Firefox';
+  else if (/Safari\//.test(ua))  browser = 'Safari';
+
+  if (/Windows/.test(ua))        os = 'Windows';
+  else if (/Mac OS X/.test(ua))  os = 'macOS';
+  else if (/Linux/.test(ua))     os = 'Linux';
+  else if (/Android/.test(ua))   os = 'Android';
+  else if (/iPhone|iPad/.test(ua)) os = 'iOS';
+
+  if (/Mobi|Android/.test(ua))   device = 'Mobile';
+  else if (/iPad|Tablet/.test(ua)) device = 'Tablet';
+
+  return { browser, os, device };
+}
+
+function getSessionId() {
+  let sid = sessionStorage.getItem('cwdSid');
+  if (!sid) {
+    sid = Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+    sessionStorage.setItem('cwdSid', sid);
+  }
+  return sid;
+}
+
+async function logPageView() {
+  try {
+    const { browser, os, device } = detectEnv();
+    const sid = getSessionId();
+    const params = new URLSearchParams({
+      action: 'logview',
+      sid, browser, os, device,
+      page: 'dashboard'
+    });
+    await fetch('/api/data?' + params.toString());
+    console.log('[dash] view logged — sid=' + sid + ' browser=' + browser);
+  } catch (e) {
+    console.warn('[dash] logview failed (non-critical):', e.message);
+  }
+}
+
+// ── RENDER VIEWERS TAB ────────────────────────────────────────
+function browserIcon(b) {
+  const icons = { Chrome:'🌐', Firefox:'🦊', Safari:'🧭', Edge:'🔷', Opera:'🔴' };
+  return icons[b] || '🌐';
+}
+function osIcon(o) {
+  const icons = { Windows:'🪟', macOS:'🍎', Linux:'🐧', Android:'🤖', iOS:'📱' };
+  return icons[o] || '💻';
+}
+function deviceIcon(d) {
+  return d === 'Mobile' ? '📱' : d === 'Tablet' ? '📟' : '🖥️';
+}
+function timeAgo(isoStr) {
+  if (!isoStr) return '—';
+  const diff = Math.round((Date.now() - new Date(isoStr).getTime()) / 1000);
+  if (diff < 60)  return diff + 's ago';
+  if (diff < 3600) return Math.round(diff/60) + 'm ago';
+  if (diff < 86400) return Math.round(diff/3600) + 'h ago';
+  return Math.round(diff/86400) + 'd ago';
+}
+function isRecent(isoStr, secs) {
+  return isoStr && (Date.now() - new Date(isoStr).getTime()) < secs * 1000;
+}
+
+async function renderViewers() {
+  const el = document.getElementById('s-viewers');
+  el.innerHTML = '<div class="loader"><div class="spinner"></div>Loading view history…</div>';
+  try {
+    const data = await apiFetch('views');
+    const views = data.views || [];
+    const total = data.total || 0;
+    const active = data.active || 0;
+    const todayUnique = data.todayUnique || 0;
+
+    // Group by date for timeline
+    const byDate = {};
+    views.forEach(v => {
+      const d = v.date || 'Unknown';
+      if (!byDate[d]) byDate[d] = [];
+      byDate[d].push(v);
+    });
+
+    // Browser breakdown
+    const browserCount = {};
+    const osCount = {};
+    views.forEach(v => {
+      browserCount[v.browser] = (browserCount[v.browser]||0) + 1;
+      osCount[v.os] = (osCount[v.os]||0) + 1;
+    });
+
+    let h = `
+    <div class="viewer-grid">
+      <div class="v-kpi" style="border-top:3px solid var(--green)">
+        <div class="lb"><span class="live-dot"></span>Active Now</div>
+        <div class="vl" style="color:var(--green)">${active}</div>
+        <div class="sb">sessions in last 5 min</div>
+      </div>
+      <div class="v-kpi" style="border-top:3px solid var(--blue)">
+        <div class="lb">Today's Unique Visitors</div>
+        <div class="vl">${todayUnique}</div>
+        <div class="sb">${data.today || '—'}</div>
+      </div>
+      <div class="v-kpi" style="border-top:3px solid var(--purple)">
+        <div class="lb">Total Views (all time)</div>
+        <div class="vl">${total.toLocaleString('en-IN')}</div>
+        <div class="sb">since tracking started</div>
+      </div>
+      <div class="v-kpi" style="border-top:3px solid var(--amber)">
+        <div class="lb">Unique Sessions (shown)</div>
+        <div class="vl">${new Set(views.map(v=>v.sid)).size}</div>
+        <div class="sb">in last 100 views</div>
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <div class="card-title">Browser Breakdown</div>
+        <table><thead><tr><th style="text-align:left">Browser</th><th>Views</th><th>Share</th></tr></thead><tbody>
+        ${Object.entries(browserCount).sort((a,b)=>b[1]-a[1]).map(([b,n])=>`
+          <tr>
+            <td>${browserIcon(b)} ${b}</td>
+            <td style="text-align:right">${n}</td>
+            <td style="text-align:right">
+              <div style="display:flex;align-items:center;justify-content:flex-end;gap:6px">
+                <div style="width:60px;background:var(--border);border-radius:3px;height:5px">
+                  <div style="width:${Math.round(n/views.length*100)}%;background:var(--blue);height:5px;border-radius:3px"></div>
+                </div>
+                ${Math.round(n/views.length*100)}%
+              </div>
+            </td>
+          </tr>`).join('')}
+        </tbody></table>
+      </div>
+      <div class="card">
+        <div class="card-title">OS / Device Breakdown</div>
+        <table><thead><tr><th style="text-align:left">OS</th><th>Views</th><th>Share</th></tr></thead><tbody>
+        ${Object.entries(osCount).sort((a,b)=>b[1]-a[1]).map(([o,n])=>`
+          <tr>
+            <td>${osIcon(o)} ${o}</td>
+            <td style="text-align:right">${n}</td>
+            <td style="text-align:right">
+              <div style="display:flex;align-items:center;justify-content:flex-end;gap:6px">
+                <div style="width:60px;background:var(--border);border-radius:3px;height:5px">
+                  <div style="width:${Math.round(n/views.length*100)}%;background:var(--purple);height:5px;border-radius:3px"></div>
+                </div>
+                ${Math.round(n/views.length*100)}%
+              </div>
+            </td>
+          </tr>`).join('')}
+        </tbody></table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">
+        Recent View History
+        <span class="card-hint">last 100 views · auto-refreshes every 60s · logged to ViewLog sheet</span>
+        <button class="act-btn" onclick="renderViewers()" style="font-size:10px;padding:3px 10px">⟳ Refresh</button>
+      </div>
+      <div class="tw">
+      <table><thead><tr>
+        <th style="text-align:left">When</th>
+        <th style="text-align:left">Date</th>
+        <th style="text-align:left">Time</th>
+        <th style="text-align:left">Session ID</th>
+        <th style="text-align:left">Browser</th>
+        <th style="text-align:left">OS</th>
+        <th style="text-align:left">Device</th>
+        <th style="text-align:left">Status</th>
+      </tr></thead><tbody>
+      ${views.length === 0 ? '<tr><td colspan="8" style="text-align:center;color:var(--text3);padding:20px">No views recorded yet</td></tr>' :
+        views.map(v => {
+          const live = isRecent(v.ts, 300);
+          return `<tr>
+            <td style="color:var(--text3);font-size:11px">${timeAgo(v.ts)}</td>
+            <td>${v.date}</td>
+            <td>${v.time}</td>
+            <td style="font-family:monospace;font-size:10px;color:var(--text3)">${v.sid}</td>
+            <td>${browserIcon(v.browser)} ${v.browser}</td>
+            <td>${osIcon(v.os)} ${v.os}</td>
+            <td>${deviceIcon(v.device)} ${v.device}</td>
+            <td>${live ? '<span class="badge-live">● Live</span>' : '<span style="font-size:10px;color:var(--text3)">Viewed</span>'}</td>
+          </tr>`;
+        }).join('')
+      }
+      </tbody></table>
+      </div>
+    </div>`;
+
+    el.innerHTML = h;
+
+    // Auto-refresh every 60s while on this tab
+    if (window._viewerRefreshTimer) clearInterval(window._viewerRefreshTimer);
+    window._viewerRefreshTimer = setInterval(() => {
+      if (TAB === 'viewers') renderViewers();
+      else clearInterval(window._viewerRefreshTimer);
+    }, 60000);
+
+  } catch (e) {
+    console.error('[dash] renderViewers failed:', e);
+    el.innerHTML = `<div class="err-box"><strong>⚠ Could not load view history</strong><br>${e.message}<br><br>
+      Make sure Code.gs is updated with the <code>logView</code> and <code>getViews</code> functions and redeployed.</div>`;
+  }
+}
+
+
 async function apiFetch(action) {
   const url = '/api/data?action=' + action;
   console.log('[dash] GET', url);
@@ -301,6 +535,7 @@ async function loadData(retry) {
     document.getElementById('dataSubtitle').textContent =
       'Jan 2026 – ' + lastMo + ' · ' + meta.clients.length + ' clients · Live · ' + new Date().toLocaleTimeString('en-IN');
     go();
+    logPageView(); // non-blocking — log this session view
   } catch(e) {
     console.error('[dash] loadData fail attempt', retry+1, e);
     if (e.message.includes('504') && retry < 1) {
@@ -413,34 +648,60 @@ document.addEventListener('click', e => {
 });
 
 // ── WEEKS ─────────────────────────────────────────────────────
+// PENDING_WEEKS = draft while panel open; SEL_WEEKS = committed
+let PENDING_WEEKS = [];
+
 function renderWeekList() {
   const box = document.getElementById('wkfList'); if (!DB) return;
   box.innerHTML = [...DB.wow.weeks].reverse().map(w => {
-    const chk = SEL_WEEKS.includes(w);
-    return `<label class="msel-item ${chk?'checked':''}"><input type="checkbox" ${chk?'checked':''} onchange="toggleWeek('${w}')">${w.replace('2026-','')}</label>`;
+    const chk = PENDING_WEEKS.includes(w);
+    return `<label class="msel-item ${chk?'checked':''}">
+      <input type="checkbox" ${chk?'checked':''} onchange="draftWeek('${w}')">
+      ${w.replace('2026-','')}
+    </label>`;
   }).join('');
+  updateWeekCount();
 }
-function toggleWeek(w) {
-  WEEK_MODE = 'custom';
-  const i = SEL_WEEKS.indexOf(w);
-  if (i===-1) SEL_WEEKS.push(w); else SEL_WEEKS.splice(i,1);
-  SEL_WEEKS.sort();
-  updateWeekBtnLabel(); renderWeekList(); go();
+function draftWeek(w) {
+  const i = PENDING_WEEKS.indexOf(w);
+  if (i===-1) PENDING_WEEKS.push(w); else PENDING_WEEKS.splice(i,1);
+  PENDING_WEEKS.sort();
+  renderWeekList();
+}
+function applyWeeks() {
+  SEL_WEEKS  = [...PENDING_WEEKS];
+  WEEK_MODE  = SEL_WEEKS.length===0 ? 'all'
+    : SEL_WEEKS.length===DB.wow.weeks.length ? 'all' : 'custom';
+  if (SEL_WEEKS.length===0) SEL_WEEKS = DB.wow.weeks.slice(-6), WEEK_MODE='last6';
+  updateWeekBtnLabel();
+  document.querySelectorAll('.msel-panel').forEach(p=>p.classList.remove('open'));
+  go();
 }
 function quickWeeks(n) {
   if (!DB) return;
-  WEEK_MODE = n===0?'all':'last'+n;
-  SEL_WEEKS = n===0 ? [...DB.wow.weeks] : DB.wow.weeks.slice(-n);
-  updateWeekBtnLabel(); renderWeekList(); go();
+  WEEK_MODE = n===0 ? 'all' : 'last'+n;
+  PENDING_WEEKS = n===0 ? [...DB.wow.weeks] : DB.wow.weeks.slice(-n);
+  SEL_WEEKS = [...PENDING_WEEKS];
+  updateWeekBtnLabel(); renderWeekList();
+  document.querySelectorAll('.msel-panel').forEach(p=>p.classList.remove('open'));
+  go();
+}
+function updateWeekCount() {
+  const el = document.getElementById('wkfCount'); if (!el) return;
+  el.textContent = PENDING_WEEKS.length===0
+    ? 'No weeks selected'
+    : PENDING_WEEKS.length + ' of ' + (DB?.wow.weeks.length||0) + ' selected';
 }
 function updateWeekBtnLabel() {
-  const btn = document.querySelector('#wkfWrap .msel-btn');
+  const btn = document.querySelector('#wkfWrap .msel-btn'); if (!btn) return;
   const map = {last6:'Last 6 Weeks',last8:'Last 8 Weeks',last12:'Last 12 Weeks',all:'All Weeks'};
   const txt = (WEEK_MODE!=='custom' && map[WEEK_MODE]) ? map[WEEK_MODE]
-    : (SEL_WEEKS.length===0?'No weeks':SEL_WEEKS.length+' weeks');
+    : (SEL_WEEKS.length===0 ? 'No weeks' : SEL_WEEKS.length+' weeks');
   btn.innerHTML = txt + ' <span class="msel-arr">▾</span>';
 }
-function getWeeks() { return SEL_WEEKS.length ? SEL_WEEKS : (DB ? DB.wow.weeks.slice(-6) : []); }
+function getWeeks() {
+  return SEL_WEEKS.length ? SEL_WEEKS : (DB ? DB.wow.weeks.slice(-6) : []);
+}
 
 // ── MONTHS ────────────────────────────────────────────────────
 // ── MONTHS ────────────────────────────────────────────────────
@@ -527,28 +788,70 @@ function getMonths() {
 }
 
 // ── CLIENTS ───────────────────────────────────────────────────
+// PENDING_CLIENTS = draft while panel open; SEL_CLIENTS = committed
+// Both empty = "All Clients"
+let PENDING_CLIENTS = [];
+
 function renderClientList() {
   const box = document.getElementById('clfList'); if (!DB) return;
   const q = (document.getElementById('clfSearch').value||'').toLowerCase();
-  const list = DB.meta.clients.filter(c => !q||c.toLowerCase().includes(q));
+  const list = DB.meta.clients.filter(c => !q || c.toLowerCase().includes(q));
+  const allSelected = PENDING_CLIENTS.length === 0;
   box.innerHTML = list.map(c => {
-    const chk = SEL_CLIENTS.includes(c);
-    return `<label class="msel-item ${chk?'checked':''}"><input type="checkbox" ${chk?'checked':''} onchange="toggleClient('${c.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')"> ${c}</label>`;
+    const chk = allSelected || PENDING_CLIENTS.includes(c);
+    return `<label class="msel-item ${chk?'checked':''}">
+      <input type="checkbox" ${chk?'checked':''} onchange="draftClient('${c.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')">
+      ${c}
+    </label>`;
   }).join('');
+  updateClientCount();
 }
-function toggleClient(c) {
-  const i = SEL_CLIENTS.indexOf(c);
-  if (i===-1) SEL_CLIENTS.push(c); else SEL_CLIENTS.splice(i,1);
-  updateClientBtnLabel(); renderClientList(); go();
+function draftClient(c) {
+  if (PENDING_CLIENTS.length === 0) {
+    // "All" mode — deselect means pick all EXCEPT this one
+    PENDING_CLIENTS = DB.meta.clients.filter(x => x !== c);
+  } else {
+    const i = PENDING_CLIENTS.indexOf(c);
+    if (i===-1) PENDING_CLIENTS.push(c); else PENDING_CLIENTS.splice(i,1);
+    if (PENDING_CLIENTS.length === DB.meta.clients.length) PENDING_CLIENTS = [];
+  }
+  renderClientList();
+}
+function applyClients() {
+  SEL_CLIENTS = [...PENDING_CLIENTS];
+  updateClientBtnLabel();
+  document.querySelectorAll('.msel-panel').forEach(p=>p.classList.remove('open'));
+  go();
+}
+function quickClients(all) {
+  PENDING_CLIENTS = all ? [] : [];   // all=true → empty (all), all=false → stay empty but flag clear
+  if (!all) PENDING_CLIENTS = ['__NONE__'];  // sentinel for "none selected"
+  updateClientCount(); renderClientList();
 }
 function selectAllClients(all) {
-  SEL_CLIENTS = all ? [...DB.meta.clients] : [];
-  updateClientBtnLabel(); renderClientList(); go();
+  PENDING_CLIENTS = all ? [] : ['__NONE__'];
+  SEL_CLIENTS = all ? [] : [];
+  updateClientBtnLabel(); renderClientList();
+  document.querySelectorAll('.msel-panel').forEach(p=>p.classList.remove('open'));
+  go();
+}
+function updateClientCount() {
+  const el = document.getElementById('clfCount'); if (!el) return;
+  const total = DB?.meta.clients.length || 0;
+  if (PENDING_CLIENTS.length === 0) {
+    el.textContent = 'All ' + total + ' clients';
+  } else if (PENDING_CLIENTS[0] === '__NONE__') {
+    el.textContent = '0 selected';
+  } else {
+    el.textContent = PENDING_CLIENTS.length + ' of ' + total + ' selected';
+  }
 }
 function updateClientBtnLabel() {
-  const btn = document.querySelector('#clfWrap .msel-btn');
-  const txt = SEL_CLIENTS.length===0 ? 'All Clients'
-    : (SEL_CLIENTS.length===1 ? SEL_CLIENTS[0].slice(0,18) : SEL_CLIENTS.length+' clients');
+  const btn = document.querySelector('#clfWrap .msel-btn'); if (!btn) return;
+  let txt;
+  if (SEL_CLIENTS.length === 0) txt = 'All Clients';
+  else if (SEL_CLIENTS.length === 1) txt = SEL_CLIENTS[0].slice(0,20);
+  else txt = SEL_CLIENTS.length + ' clients';
   btn.innerHTML = txt + ' <span class="msel-arr">▾</span>';
 }
 function setMinDel(v) {
@@ -758,7 +1061,8 @@ function sw(t,btn){
   document.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');
   document.querySelectorAll('.sec').forEach(s=>s.classList.remove('on'));
   document.getElementById('s-'+t).classList.add('on');
-  if(DB)go();
+  if (t === 'viewers') { renderViewers(); return; }
+  if(DB) go();
 }
 function go(){
   if(!DB)return;
