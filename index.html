@@ -280,7 +280,13 @@ tr:last-child td{border-bottom:none;}
 </div>
 <script>
 // ── STATE ─────────────────────────────────────────────────────
-let DB = null, TAB = 'ov', BKT = 'all', SORT = {col:'del',dir:'desc'}, CH = {};
+let DB = null, TAB = 'ov', BKT = 'all', CH = {};
+// Per-table sort state — key = table id, value = {col, dir}
+const SORTS = {};
+function getSort(tid, defCol='del', defDir='desc') {
+  if (!SORTS[tid]) SORTS[tid] = {col:defCol, dir:defDir};
+  return SORTS[tid];
+}
 let PERIOD    = 'week';   // 'week' | 'month'
 let SEL_WEEKS = [], WEEK_MODE = 'last6';
 let SEL_MONTHS= [], MONTH_MODE= 'all', PENDING_MONTHS = [];
@@ -957,8 +963,8 @@ function monthAggForClients(months, clients) {
 }
 
 // ── SORT ──────────────────────────────────────────────────────
-function doSort(entries) {
-  const {col,dir}=SORT;
+function doSort(entries, tid='ov') {
+  const {col,dir}=getSort(tid);
   return [...entries].sort((a,b)=>{
     const va=col==='name'?a[0].toLowerCase():(a[1][col]??0);
     const vb=col==='name'?b[0].toLowerCase():(b[1][col]??0);
@@ -966,10 +972,38 @@ function doSort(entries) {
     return dir==='desc'?vb-va:va-vb;
   });
 }
-function clickSort(col){SORT.dir=(SORT.col===col&&SORT.dir==='desc')?'asc':'desc';SORT.col=col;go();}
-function th(col,lbl){
-  const a=SORT.col===col;
-  return`<th class="${a?'sa':''}" onclick="clickSort('${col}')">${lbl}<span class="si">${a?(SORT.dir==='desc'?'▼':'▲'):'⇅'}</span></th>`;
+// Sort a flat row array by column index
+function sortRows(rows, cidx, numeric, tid) {
+  const s = getSort(tid, '__none__', 'asc');
+  return [...rows].sort((a,b)=>{
+    const va = a[cidx], vb = b[cidx];
+    if (numeric) return s.dir==='asc' ? (Number(va)||0)-(Number(vb)||0) : (Number(vb)||0)-(Number(va)||0);
+    return s.dir==='asc' ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
+  });
+}
+function clickSort(col, tid) {
+  const s = getSort(tid||TAB);
+  s.dir = (s.col===col && s.dir==='desc') ? 'asc' : 'desc';
+  s.col = col;
+  go();
+}
+function th(col, lbl, tid) {
+  const s = getSort(tid||TAB);
+  const a = s.col===col;
+  const targ = tid||TAB;
+  return `<th class="${a?'sa':''}" onclick="clickSort('${col}','${targ}')">${lbl}<span class="si">${a?(s.dir==='desc'?'▼':'▲'):'⇅'}</span></th>`;
+}
+// th for flat index-based tables (Trend summary tables)
+function thF(label, cidx, numeric, tid) {
+  const s = getSort(tid, '__none__', 'asc');
+  const a = s.col===String(cidx);
+  return `<th class="${a?'sa':''}" onclick="clickFlat('${tid}',${cidx},${numeric})">${label}<span class="si">${a?(s.dir==='desc'?'▼':'▲'):'⇅'}</span></th>`;
+}
+function clickFlat(tid, cidx, numeric) {
+  const s = getSort(tid, '__none__', 'asc');
+  s.dir = (s.col===String(cidx) && s.dir==='desc') ? 'asc' : 'desc';
+  s.col = String(cidx);
+  go();
 }
 
 // ── FORMAT ────────────────────────────────────────────────────
@@ -1213,7 +1247,7 @@ function renderOv(){
       })()
     : clientAgg(clients, weeks);
 
-  const sorted=doSort(Object.entries(ca));
+  const sorted=doSort(Object.entries(ca),'ov');
   const mx=Math.max(...Object.values(ca).map(d=>d.del),1);
 
   // MoM data for table columns
@@ -1250,8 +1284,8 @@ function renderOv(){
   <div class="card"><div class="card-title">Client Summary
     <span class="card-hint">↕ Sort · ${periodLabel} view · Esc% & LA% show Δ per ${periodLabel.toLowerCase()}</span></div>
   <div class="tw"><table><thead><tr>
-    ${th('name','Client')}${th('del','Total Del')}${th('esc','Esc')}${th('escP','Esc %')}
-    ${th('loss','Loss')}${th('laP','LA %')}${th('lv','Loss Value')}${th('aov','AOV')}${th('cpo','CPO')}
+    ${th('name','Client','ov')}${th('del','Total Del','ov')}${th('esc','Esc','ov')}${th('escP','Esc %','ov')}
+    ${th('loss','Loss','ov')}${th('laP','LA %','ov')}${th('lv','Loss Value','ov')}${th('aov','AOV','ov')}${th('cpo','CPO','ov')}
     ${isMonth
       ? allMo.map(m=>`<th style="border-left:1px solid var(--border)">${m} Del</th><th>${m} Esc%</th><th>MoM Δ</th><th>${m} LA%</th><th>MoM Δ</th>`).join('')
       : weeks.map(w=>`<th style="border-left:1px solid var(--border)">${w.replace('2026-','')} Del</th><th>Esc%</th><th>WoW Δ</th>`).join('')
@@ -1348,11 +1382,11 @@ function renderEsc(){
   </div>
   <div class="card"><div class="card-title">Client-wise Esc % — ${periodLabel} on ${periodLabel} <span class="card-hint">↕ sort</span></div>
   <div class="tw"><table><thead><tr>
-    ${th('name','Client')}${th('del','Deliveries')}${th('esc','Esc Count')}${th('escP','Esc %')}
-    ${lbs.map(l=>`<th>${l}</th><th>${deltaLabel}</th>`).join('')}
+    ${th('name','Client','esc')}${th('del','Deliveries','esc')}${th('esc','Esc Count','esc')}${th('escP','Esc %','esc')}
+    ${lbs.map((l,i)=>`<th onclick="clickFlat('escW',${i},true)" class="" style="cursor:pointer">${l} <span class="si">⇅</span></th><th>${deltaLabel}</th>`).join('')}
   </tr></thead><tbody>`;
 
-  doSort(active).forEach(([name,d])=>{
+  doSort(active,'esc').forEach(([name,d])=>{
     const pd=clientPeriodEsc[name]||[];
     h+=`<tr><td title="${name}">${name}${bchip(name)}</td><td>${f(d.del,'n')}</td><td>${f(d.esc,'n')}</td>
       <td><span class="pill ${escCls(d.escP)}">${f(d.escP,'p')}</span></td>`;
@@ -1434,11 +1468,11 @@ function renderLA(){
   </div>
   <div class="card"><div class="card-title">Client-wise LA % — ${periodLabel} on ${periodLabel} <span class="card-hint">↕ sort</span></div>
   <div class="tw"><table><thead><tr>
-    ${th('name','Client')}${th('del','Deliveries')}${th('esc','Esc Count')}${th('loss','Loss Count')}${th('laP','LA %')}
-    ${lbs.map(l=>`<th>${l}</th><th>${deltaLabel}</th>`).join('')}
+    ${th('name','Client','la')}${th('del','Deliveries','la')}${th('esc','Esc Count','la')}${th('loss','Loss Count','la')}${th('laP','LA %','la')}
+    ${lbs.map((l,i)=>`<th onclick="clickFlat('laW',${i},false)" style="cursor:pointer">${l} <span class="si">⇅</span></th><th>${deltaLabel}</th>`).join('')}
   </tr></thead><tbody>`;
 
-  doSort(active).forEach(([name,d])=>{
+  doSort(active,'la').forEach(([name,d])=>{
     const pd=clientPeriodLA[name]||[];
     h+=`<tr><td title="${name}">${name}${bchip(name)}</td><td>${f(d.del,'n')}</td><td>${f(d.esc,'n')}</td><td>${f(d.loss,'n')}</td>
       <td><span class="pill ${laCls(d.laP)}">${f(d.laP,'p')}</span></td>`;
@@ -1502,9 +1536,9 @@ function renderAOV(){
   </div>
   <div class="card"><div class="card-title">Client-wise AOV &amp; CPO <span class="card-hint">↕ sort · ${periodLabel} view</span></div>
   <div class="tw"><table><thead><tr>
-    ${th('name','Client')}${th('del','Del Count')}${th('loss','Loss Count')}${th('lv','Loss Value')}${th('aov','AOV')}${th('cpo','Approx CPO')}${th('laP','LA %')}${th('escP','Esc %')}
+    ${th('name','Client','aov')}${th('del','Del Count','aov')}${th('loss','Loss Count','aov')}${th('lv','Loss Value','aov')}${th('aov','AOV','aov')}${th('cpo','Approx CPO','aov')}${th('laP','LA %','aov')}${th('escP','Esc %','aov')}
   </tr></thead><tbody>`;
-  doSort(withData).forEach(([name,d])=>{
+  doSort(withData,'aov').forEach(([name,d])=>{
     h+=`<tr><td title="${name}">${name}${bchip(name)}</td><td>${f(d.del,'n')}</td><td>${f(d.loss,'n')}</td>
       <td>${f(d.lv,'rv')}</td><td><strong style="color:#d97706">${f(d.aov,'cpo')}</strong></td>
       <td><strong style="color:#7c3aed">${f(d.cpo,'cpo')}</strong></td>
@@ -1570,26 +1604,34 @@ function renderTrend(){
   </div>
   <div class="card"><div class="card-title">Top 8 Clients Esc % — WoW</div><div style="position:relative;height:250px"><canvas id="tC8W"></canvas></div></div>
   <div class="card"><div class="card-title">Top 8 Clients Esc % — MoM</div><div style="position:relative;height:250px"><canvas id="tC8M"></canvas></div></div>
-  <div class="card"><div class="card-title">Week-wise Summary</div>
+  <div class="card"><div class="card-title">Week-wise Summary <span class="card-hint">↕ click headers to sort</span></div>
   <div class="tw"><table><thead><tr>
-    <th>Week</th><th>Deliveries</th><th>Esc Count</th><th>Esc %</th><th>Loss Count</th><th>LA %</th><th>Loss Value</th><th>AOV</th><th>CPO</th>
+    ${thF('Week',0,false,'trendW')}${thF('Deliveries',1,true,'trendW')}${thF('Esc Count',2,true,'trendW')}${thF('Esc %',3,true,'trendW')}${thF('Loss Count',4,true,'trendW')}${thF('LA %',5,true,'trendW')}${thF('Loss Value',6,true,'trendW')}${thF('AOV',7,true,'trendW')}${thF('CPO',8,true,'trendW')}
   </tr></thead><tbody>`;
-  wAgg.forEach((d,i)=>{const p=i>0?wAgg[i-1]:null;
-    h+=`<tr><td>${d.wk.replace('2026-','')}</td><td>${f(d.del,'n')}</td><td>${f(d.esc,'n')}</td>
-      <td>${f(d.escP,'p')} ${p?badge(d.escP,p.escP,true):''}</td>
-      <td>${f(d.loss,'n')}</td><td>${f(d.laP,'p')} ${p?badge(d.laP,p.laP,false):''}</td>
-      <td>${f(d.lv,'rv')}</td><td>${f(d.aov,'cpo')}</td><td>${f(d.cpo,'cpo')}</td></tr>`;
+  const wRows = wAgg.map((d,i)=>[d.wk.replace('2026-',''),d.del,d.esc,d.escP,d.loss,d.laP,d.lv,d.aov,d.cpo,i>0?wAgg[i-1]:null]);
+  const wS = getSort('trendW','__none__','asc');
+  const wSorted = wS.col==='__none__' ? wRows : sortRows(wRows,parseInt(wS.col),wS.col!=='0','trendW');
+  wSorted.forEach((r)=>{
+    const p = wS.col==='__none__' ? r[9] : null;
+    h+=`<tr><td><strong>${r[0]}</strong></td><td>${f(r[1],'n')}</td><td>${f(r[2],'n')}</td>
+      <td>${f(r[3],'p')} ${p?badge(r[3],p.escP,true):''}</td>
+      <td>${f(r[4],'n')}</td><td>${f(r[5],'p')} ${p?badge(r[5],p.laP,false):''}</td>
+      <td>${f(r[6],'rv')}</td><td>${f(r[7],'cpo')}</td><td>${f(r[8],'cpo')}</td></tr>`;
   });
   h+=`</tbody></table></div></div>
-  <div class="card"><div class="card-title">Month-wise Summary</div>
+  <div class="card"><div class="card-title">Month-wise Summary <span class="card-hint">↕ click headers to sort</span></div>
   <div class="tw"><table><thead><tr>
-    <th>Month</th><th>Deliveries</th><th>Esc Count</th><th>Esc %</th><th>Loss Count</th><th>LA %</th><th>Loss Value</th><th>AOV</th><th>CPO</th>
+    ${thF('Month',0,false,'trendM')}${thF('Deliveries',1,true,'trendM')}${thF('Esc Count',2,true,'trendM')}${thF('Esc %',3,true,'trendM')}${thF('Loss Count',4,true,'trendM')}${thF('LA %',5,true,'trendM')}${thF('Loss Value',6,true,'trendM')}${thF('AOV',7,true,'trendM')}${thF('CPO',8,true,'trendM')}
   </tr></thead><tbody>`;
-  mAgg.forEach((d,i)=>{const p=i>0?mAgg[i-1]:null;
-    h+=`<tr><td>${d.mo}</td><td>${f(d.del,'n')}</td><td>${f(d.esc,'n')}</td>
-      <td>${f(d.escP,'p')} ${p?badge(d.escP,p.escP,true):''}</td>
-      <td>${f(d.loss,'n')}</td><td>${f(d.laP,'p')} ${p?badge(d.laP,p.laP,false):''}</td>
-      <td>${f(d.lv,'rv')}</td><td>${f(d.aov,'cpo')}</td><td>${f(d.cpo,'cpo')}</td></tr>`;
+  const mRows = mAgg.map((d,i)=>[d.mo,d.del,d.esc,d.escP,d.loss,d.laP,d.lv,d.aov,d.cpo,i>0?mAgg[i-1]:null]);
+  const mS = getSort('trendM','__none__','asc');
+  const mSorted = mS.col==='__none__' ? mRows : sortRows(mRows,parseInt(mS.col),mS.col!=='0','trendM');
+  mSorted.forEach((r)=>{
+    const p = mS.col==='__none__' ? r[9] : null;
+    h+=`<tr><td><strong>${r[0]}</strong></td><td>${f(r[1],'n')}</td><td>${f(r[2],'n')}</td>
+      <td>${f(r[3],'p')} ${p?badge(r[3],p.escP,true):''}</td>
+      <td>${f(r[4],'n')}</td><td>${f(r[5],'p')} ${p?badge(r[5],p.laP,false):''}</td>
+      <td>${f(r[6],'rv')}</td><td>${f(r[7],'cpo')}</td><td>${f(r[8],'cpo')}</td></tr>`;
   });
   h+=`</tbody></table></div></div>`;
   document.getElementById('s-trend').innerHTML=h;
