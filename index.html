@@ -1092,7 +1092,66 @@ function comboChart(id,lbs,barS,lineS,fmtBar,fmtLine,h=230){
   CH[id]=chart;
 }
 
-// ── TAB SWITCH ────────────────────────────────────────────────
+// ── CLIENT-WISE DATASETS ──────────────────────────────────────
+// When multiple clients are selected, each gets its own line.
+// When only 1 or "All" clients → single combined aggregate line.
+function clientDatasets(clients, metric, fmtY) {
+  const isMonth = PERIOD === 'month';
+  const showPerClient = SEL_CLIENTS.length >= 2;  // multi-client = per-client lines
+
+  if (!showPerClient) {
+    // Single combined line (default behaviour)
+    const pAgg = getPeriodAgg(clients);
+    return [{
+      label: SEL_CLIENTS.length === 1 ? SEL_CLIENTS[0] : 'Overall',
+      color: PAL[0],
+      data:  pAgg.map(d => d[metric] ?? null)
+    }];
+  }
+
+  // One line per selected client
+  return clients.slice(0, 12).map((c, i) => {
+    let data;
+    if (isMonth) {
+      data = getMonths().map(mo => {
+        const m = DB.mom.months.find(x => x.mo === mo);
+        const d = m?.clients[c];
+        if (!d || d.del === 0) return null;
+        if (metric === 'del')  return d.del;
+        if (metric === 'esc')  return d.esc;
+        if (metric === 'loss') return d.loss;
+        if (metric === 'escP') return d.esc / d.del * 100;
+        if (metric === 'laP')  return d.esc > 0 ? d.loss / d.esc * 100 : null;
+        if (metric === 'cpo')  return d.lv / d.del;
+        if (metric === 'aov')  return d.loss > 0 ? d.lv / d.loss : null;
+        return null;
+      });
+    } else {
+      const weeks = getWeeks();
+      data = weeks.map(wk => {
+        const r = (DB.wow.week_client[wk] || {})[c] || { del:0, esc:0, loss:0, lv:0 };
+        if (r.del === 0) return null;
+        if (metric === 'del')  return r.del;
+        if (metric === 'esc')  return r.esc;
+        if (metric === 'loss') return r.loss;
+        if (metric === 'escP') return r.esc / r.del * 100;
+        if (metric === 'laP')  return r.esc > 0 ? r.loss / r.esc * 100 : null;
+        if (metric === 'cpo')  return r.lv / r.del;
+        if (metric === 'aov')  return r.loss > 0 ? r.lv / r.loss : null;
+        return null;
+      });
+    }
+    return { label: c, color: PAL[i % 10], data };
+  });
+}
+
+// Get labels for the current period
+function getPeriodLabels() {
+  if (PERIOD === 'month') return getMonths();
+  return getWeeks().map(w => w.replace('2026-', ''));
+}
+
+
 function sw(t,btn){
   TAB=t;
   document.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');
@@ -1227,11 +1286,14 @@ function renderOv(){
   });
   h+=`</tbody></table></div></div>`;
   document.getElementById('s-ov').innerHTML=h;
-  lineChart('ovDC',lbs,[{label:'Deliveries',color:'#3b82f6',data:pAgg.map(d=>d.del)}],v=>f(v,'n'));
-  lineChart('ovEC',lbs,[{label:'Esc %',color:'#ef4444',data:pAgg.map(d=>d.escP)}],v=>v.toFixed(2)+'%');
-  lineChart('ovLC',lbs,[{label:'LA %',color:'#10b981',data:pAgg.map(d=>d.laP)}],v=>v.toFixed(2)+'%');
-  lineChart('ovAC',lbs,[{label:'AOV',color:'#f59e0b',data:pAgg.map(d=>d.aov)}],v=>'₹'+v.toFixed(2));
-  lineChart('ovCC',lbs,[{label:'CPO',color:'#8b5cf6',data:pAgg.map(d=>d.cpo)}],v=>'₹'+v.toFixed(2));
+  const lbsP = getPeriodLabels();
+  const multiClient = SEL_CLIENTS.length >= 2;
+  // When multiple clients: show each client as its own line on every chart
+  lineChart('ovDC',lbsP, multiClient ? clientDatasets(clients,'del') : [{label:'Deliveries',color:'#3b82f6',data:pAgg.map(d=>d.del)}], v=>f(v,'n'));
+  lineChart('ovEC',lbsP, multiClient ? clientDatasets(clients,'escP') : [{label:'Esc %',color:'#ef4444',data:pAgg.map(d=>d.escP)}], v=>v.toFixed(2)+'%');
+  lineChart('ovLC',lbsP, multiClient ? clientDatasets(clients,'laP') : [{label:'LA %',color:'#10b981',data:pAgg.map(d=>d.laP)}], v=>v.toFixed(2)+'%');
+  lineChart('ovAC',lbsP, multiClient ? clientDatasets(clients,'aov') : [{label:'AOV',color:'#f59e0b',data:pAgg.map(d=>d.aov)}], v=>'₹'+v.toFixed(2));
+  lineChart('ovCC',lbsP, multiClient ? clientDatasets(clients,'cpo') : [{label:'CPO',color:'#8b5cf6',data:pAgg.map(d=>d.cpo)}], v=>'₹'+v.toFixed(2));
 }
 
 // ════════ ESCALATION % ════════
@@ -1299,21 +1361,27 @@ function renderEsc(){
   });
   h+=`</tbody></table></div></div>`;
   document.getElementById('s-esc').innerHTML=h;
-
-  comboChart('escOC',lbs,
-    {label:'Delivery Count',color:'#94a3b8',data:pAgg.map(d=>d.del)},
-    {label:'Esc %',color:'#ef4444',data:pAgg.map(d=>d.escP)},
-    v=>f(v,'n'),v=>v.toFixed(2)+'%',230);
-
-  if(isMonth){
-    lineChart('escCC',lbs,top8.map((c,i)=>({label:c,color:PAL[i%10],
-      data:getMonths().map(mo=>{const m=DB.mom.months.find(x=>x.mo===mo);const d=m?.clients[c];return d&&d.del>0?d.esc/d.del*100:null;})})),
-      v=>v==null?'':v.toFixed(2)+'%',230);
+  const lbsEsc=getPeriodLabels();
+  const multiClientEsc=SEL_CLIENTS.length>=2;
+  if(multiClientEsc){
+    // Each selected client gets its own Esc% line
+    lineChart('escOC',lbsEsc,clientDatasets(clients,'escP'),v=>v==null?'':v.toFixed(2)+'%',230);
+    lineChart('escCC',lbsEsc,clientDatasets(clients,'del'),v=>v==null?'':f(v,'n'),230);
   } else {
-    const weeks=getWeeks();
-    lineChart('escCC',lbs,top8.map((c,i)=>({label:c,color:PAL[i%10],
-      data:weeks.map(wk=>{const r=(DB.wow.week_client[wk]||{})[c]||{del:0,esc:0};return r.del>0?r.esc/r.del*100:null;})})),
-      v=>v==null?'':v.toFixed(2)+'%',230);
+    comboChart('escOC',lbs,
+      {label:'Delivery Count',color:'#94a3b8',data:pAgg.map(d=>d.del)},
+      {label:'Esc %',color:'#ef4444',data:pAgg.map(d=>d.escP)},
+      v=>f(v,'n'),v=>v.toFixed(2)+'%',230);
+    if(isMonth){
+      lineChart('escCC',lbs,top8.map((c,i)=>({label:c,color:PAL[i%10],
+        data:getMonths().map(mo=>{const m=DB.mom.months.find(x=>x.mo===mo);const d=m?.clients[c];return d&&d.del>0?d.esc/d.del*100:null;})})),
+        v=>v==null?'':v.toFixed(2)+'%',230);
+    } else {
+      const weeks=getWeeks();
+      lineChart('escCC',lbs,top8.map((c,i)=>({label:c,color:PAL[i%10],
+        data:weeks.map(wk=>{const r=(DB.wow.week_client[wk]||{})[c]||{del:0,esc:0};return r.del>0?r.esc/r.del*100:null;})})),
+        v=>v==null?'':v.toFixed(2)+'%',230);
+    }
   }
 }
 
@@ -1379,8 +1447,13 @@ function renderLA(){
   });
   h+=`</tbody></table></div></div>`;
   document.getElementById('s-la').innerHTML=h;
-
-  lineChart('laOC',lbs,[{label:'LA %',color:'#10b981',data:pAgg.map(d=>d.laP)}],v=>v.toFixed(2)+'%',230);
+  const lbsLA=getPeriodLabels();
+  const multiClientLA=SEL_CLIENTS.length>=2;
+  if(multiClientLA){
+    lineChart('laOC',lbsLA,clientDatasets(clients,'laP'),v=>v==null?'':v.toFixed(2)+'%',230);
+  } else {
+    lineChart('laOC',lbs,[{label:'LA %',color:'#10b981',data:pAgg.map(d=>d.laP)}],v=>v.toFixed(2)+'%',230);
+  }
   hbar('laBrC',byLA.map(([c])=>c.length>18?c.slice(0,17)+'…':c),byLA.map(([,d])=>d.laP),
     byLA.map(([,d])=>d.laP>=70?'#10b98188':d.laP>=40?'#3b82f688':d.laP>=20?'#f59e0b88':'#ef444488'),
     v=>v.toFixed(1)+'%',230);
@@ -1440,8 +1513,15 @@ function renderAOV(){
   });
   h+=`</tbody></table></div></div>`;
   document.getElementById('s-aov').innerHTML=h;
-  lineChart('aovTC',lbs,[{label:'AOV',color:'#f59e0b',data:pAgg.map(d=>d.aov)}],v=>'₹'+v.toFixed(2),230);
-  lineChart('cpoTC',lbs,[{label:'CPO',color:'#8b5cf6',data:pAgg.map(d=>d.cpo)}],v=>'₹'+v.toFixed(2),230);
+  const lbsAOV=getPeriodLabels();
+  const multiClientAOV=SEL_CLIENTS.length>=2;
+  if(multiClientAOV){
+    lineChart('aovTC',lbsAOV,clientDatasets(clients,'aov'),v=>v==null?'':'₹'+v.toFixed(2),230);
+    lineChart('cpoTC',lbsAOV,clientDatasets(clients,'cpo'),v=>v==null?'':'₹'+v.toFixed(2),230);
+  } else {
+    lineChart('aovTC',lbs,[{label:'AOV',color:'#f59e0b',data:pAgg.map(d=>d.aov)}],v=>'₹'+v.toFixed(2),230);
+    lineChart('cpoTC',lbs,[{label:'CPO',color:'#8b5cf6',data:pAgg.map(d=>d.cpo)}],v=>'₹'+v.toFixed(2),230);
+  }
   hbar('aovBC',byAov.slice(0,20).map(([c])=>c.length>18?c.slice(0,17)+'…':c),byAov.slice(0,20).map(([,d])=>d.aov),byAov.slice(0,20).map((_,i)=>PAL[i%10]+'99'),v=>'₹'+v.toFixed(2));
   setTimeout(()=>hbar('cpoBC',byCpo.slice(0,20).map(([c])=>c.length>18?c.slice(0,17)+'…':c),byCpo.slice(0,20).map(([,d])=>d.cpo),byCpo.slice(0,20).map(([,d])=>d.cpo>=30?'#ef444488':d.cpo>=15?'#f59e0b88':d.cpo>=5?'#3b82f688':'#10b98188'),v=>'₹'+v.toFixed(2)),80);
 }
@@ -1513,18 +1593,48 @@ function renderTrend(){
   });
   h+=`</tbody></table></div></div>`;
   document.getElementById('s-trend').innerHTML=h;
-  lineChart('tDW',wLbs,[{label:'Deliveries',color:'#3b82f6',data:wAgg.map(d=>d.del)}],v=>f(v,'n'));
-  lineChart('tDM',mLbs,[{label:'Deliveries',color:'#3b82f6',data:mAgg.map(d=>d.del)}],v=>f(v,'n'));
-  comboChart('tEW',wLbs,{label:'Del Count',color:'#94a3b8',data:wAgg.map(d=>d.del)},{label:'Esc %',color:'#ef4444',data:wAgg.map(d=>d.escP)},v=>f(v,'n'),v=>v.toFixed(2)+'%');
-  comboChart('tEM',mLbs,{label:'Del Count',color:'#94a3b8',data:mAgg.map(d=>d.del)},{label:'Esc %',color:'#ef4444',data:mAgg.map(d=>d.escP)},v=>f(v,'n'),v=>v.toFixed(2)+'%');
-  lineChart('tLW',wLbs,[{label:'LA %',color:'#10b981',data:wAgg.map(d=>d.laP)}],v=>v.toFixed(2)+'%');
-  lineChart('tLM',mLbs,[{label:'LA %',color:'#10b981',data:mAgg.map(d=>d.laP)}],v=>v.toFixed(2)+'%');
-  lineChart('tAW',wLbs,[{label:'AOV',color:'#f59e0b',data:wAgg.map(d=>d.aov)}],v=>'₹'+v.toFixed(2));
-  lineChart('tCW',wLbs,[{label:'CPO',color:'#8b5cf6',data:wAgg.map(d=>d.cpo)}],v=>'₹'+v.toFixed(2));
-  lineChart('tAM',mLbs,[{label:'AOV',color:'#f59e0b',data:mAgg.map(d=>d.aov)}],v=>'₹'+v.toFixed(2));
-  lineChart('tCM',mLbs,[{label:'CPO',color:'#8b5cf6',data:mAgg.map(d=>d.cpo)}],v=>'₹'+v.toFixed(2));
-  lineChart('tC8W',wLbs,top8.map((c,i)=>({label:c,color:PAL[i%10],data:weeks.map(wk=>{const r=(DB.wow.week_client[wk]||{})[c]||{del:0,esc:0};return r.del>0?r.esc/r.del*100:null;})})),v=>v==null?'':v.toFixed(2)+'%',250);
-  lineChart('tC8M',mLbs,top8.map((c,i)=>({label:c,color:PAL[i%10],data:DB.mom.months.map(m=>{const d=m.clients[c];return d&&d.del>0?d.esc/d.del*100:null;})})),v=>v==null?'':v.toFixed(2)+'%',250);
+  const mc = SEL_CLIENTS.length >= 2;  // multi-client mode
+
+  if (mc) {
+    // All trend charts show one line per selected client
+    lineChart('tDW', wLbs, clientDatasets(clients,'del'),  v=>f(v,'n'));
+    lineChart('tDM', mLbs, clients.slice(0,12).map((c,i)=>({label:c,color:PAL[i%10],
+      data:DB.mom.months.map(m=>{const d=m.clients[c];return d&&d.del>0?d.del:null;})})), v=>f(v,'n'));
+
+    lineChart('tEW', wLbs, clientDatasets(clients,'escP'), v=>v==null?'':v.toFixed(2)+'%');
+    lineChart('tEM', mLbs, clients.slice(0,12).map((c,i)=>({label:c,color:PAL[i%10],
+      data:DB.mom.months.map(m=>{const d=m.clients[c];return d&&d.del>0?d.esc/d.del*100:null;})})), v=>v==null?'':v.toFixed(2)+'%');
+
+    lineChart('tLW', wLbs, clientDatasets(clients,'laP'),  v=>v==null?'':v.toFixed(2)+'%');
+    lineChart('tLM', mLbs, clients.slice(0,12).map((c,i)=>({label:c,color:PAL[i%10],
+      data:DB.mom.months.map(m=>{const d=m.clients[c];return d&&d.esc>0?d.loss/d.esc*100:null;})})), v=>v==null?'':v.toFixed(2)+'%');
+
+    lineChart('tAW', wLbs, clientDatasets(clients,'aov'),  v=>v==null?'':'₹'+v.toFixed(2));
+    lineChart('tCW', wLbs, clientDatasets(clients,'cpo'),  v=>v==null?'':'₹'+v.toFixed(2));
+    lineChart('tAM', mLbs, clients.slice(0,12).map((c,i)=>({label:c,color:PAL[i%10],
+      data:DB.mom.months.map(m=>{const d=m.clients[c];return d&&d.loss>0?d.lv/d.loss:null;})})), v=>v==null?'':'₹'+v.toFixed(2));
+    lineChart('tCM', mLbs, clients.slice(0,12).map((c,i)=>({label:c,color:PAL[i%10],
+      data:DB.mom.months.map(m=>{const d=m.clients[c];return d&&d.del>0?d.lv/d.del:null;})})), v=>v==null?'':'₹'+v.toFixed(2));
+
+    // Top client charts also become per-selected-client
+    lineChart('tC8W', wLbs, clientDatasets(clients,'escP'), v=>v==null?'':v.toFixed(2)+'%', 250);
+    lineChart('tC8M', mLbs, clients.slice(0,12).map((c,i)=>({label:c,color:PAL[i%10],
+      data:DB.mom.months.map(m=>{const d=m.clients[c];return d&&d.del>0?d.esc/d.del*100:null;})})), v=>v==null?'':v.toFixed(2)+'%', 250);
+  } else {
+    // Single/All: combined aggregate lines + top-8 client breakdowns
+    lineChart('tDW',wLbs,[{label:'Deliveries',color:'#3b82f6',data:wAgg.map(d=>d.del)}],v=>f(v,'n'));
+    lineChart('tDM',mLbs,[{label:'Deliveries',color:'#3b82f6',data:mAgg.map(d=>d.del)}],v=>f(v,'n'));
+    comboChart('tEW',wLbs,{label:'Del Count',color:'#94a3b8',data:wAgg.map(d=>d.del)},{label:'Esc %',color:'#ef4444',data:wAgg.map(d=>d.escP)},v=>f(v,'n'),v=>v.toFixed(2)+'%');
+    comboChart('tEM',mLbs,{label:'Del Count',color:'#94a3b8',data:mAgg.map(d=>d.del)},{label:'Esc %',color:'#ef4444',data:mAgg.map(d=>d.escP)},v=>f(v,'n'),v=>v.toFixed(2)+'%');
+    lineChart('tLW',wLbs,[{label:'LA %',color:'#10b981',data:wAgg.map(d=>d.laP)}],v=>v.toFixed(2)+'%');
+    lineChart('tLM',mLbs,[{label:'LA %',color:'#10b981',data:mAgg.map(d=>d.laP)}],v=>v.toFixed(2)+'%');
+    lineChart('tAW',wLbs,[{label:'AOV',color:'#f59e0b',data:wAgg.map(d=>d.aov)}],v=>'₹'+v.toFixed(2));
+    lineChart('tCW',wLbs,[{label:'CPO',color:'#8b5cf6',data:wAgg.map(d=>d.cpo)}],v=>'₹'+v.toFixed(2));
+    lineChart('tAM',mLbs,[{label:'AOV',color:'#f59e0b',data:mAgg.map(d=>d.aov)}],v=>'₹'+v.toFixed(2));
+    lineChart('tCM',mLbs,[{label:'CPO',color:'#8b5cf6',data:mAgg.map(d=>d.cpo)}],v=>'₹'+v.toFixed(2));
+    lineChart('tC8W',wLbs,top8.map((c,i)=>({label:c,color:PAL[i%10],data:weeks.map(wk=>{const r=(DB.wow.week_client[wk]||{})[c]||{del:0,esc:0};return r.del>0?r.esc/r.del*100:null;})})),v=>v==null?'':v.toFixed(2)+'%',250);
+    lineChart('tC8M',mLbs,top8.map((c,i)=>({label:c,color:PAL[i%10],data:DB.mom.months.map(m=>{const d=m.clients[c];return d&&d.del>0?d.esc/d.del*100:null;})})),v=>v==null?'':v.toFixed(2)+'%',250);
+  }
 }
 
 loadData();
