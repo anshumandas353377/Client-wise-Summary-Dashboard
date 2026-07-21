@@ -1301,12 +1301,33 @@ function renderOv(){
         const mo=DB.mom.months.find(x=>x.mo===m.mo);
         const del=mo?.clients[name]?.del||0;
         const prev=i>0?moData[i-1]:null;
-        return`<td style="border-left:1px solid var(--border)">${f(del,'n')}</td><td>${f(m.escP,'p')}</td><td>${prev?badge(m.escP,prev.escP,true):''}</td><td>${f(m.laP,'p')}</td><td>${prev?badge(m.laP,prev.laP,false):''}</td>`;
+        // Esc% colour: red if up (worse), green if down (better)
+        const eDiff=prev?m.escP-prev.escP:0;
+        const eBg=prev?(eDiff>0.001?'background:#fff0f0;color:#dc2626;':eDiff<-0.001?'background:#f0fdf4;color:#16a34a;':''):'';
+        const eArr=prev?(eDiff>0.001?'▲':eDiff<-0.001?'▼':'→'):'';
+        // LA% colour: green if up (better), red if down (worse)
+        const lDiff=prev?m.laP-prev.laP:0;
+        const lBg=prev?(lDiff>0.001?'background:#f0fdf4;color:#16a34a;':lDiff<-0.001?'background:#fff0f0;color:#dc2626;':''):'';
+        const lArr=prev?(lDiff>0.001?'▲':lDiff<-0.001?'▼':'→'):'';
+        return`<td style="border-left:1px solid var(--border)">${f(del,'n')}</td>
+          <td style="${eBg}font-weight:${prev?700:400}">${f(m.escP,'p')}</td>
+          <td style="${eBg}font-size:10px;font-weight:700;text-align:center">${prev?`${eArr} ${Math.abs(eDiff).toFixed(2)}%`:''}</td>
+          <td>${f(m.laP,'p')}</td>
+          <td style="${lBg}font-size:10px;font-weight:700;text-align:center">${prev?`${lArr} ${Math.abs(lDiff).toFixed(2)}%`:''}</td>`;
       }).join('');
     } else {
       const wkEsc=weeks.map(wk=>{const r=(DB.wow.week_client[wk]||{})[name]||{del:0,esc:0};return r.del>0?r.esc/r.del*100:0;});
       const wkDel=weeks.map(wk=>{const r=(DB.wow.week_client[wk]||{})[name]||{del:0};return r.del;});
-      periodCols=weeks.map((_,i)=>`<td style="border-left:1px solid var(--border)">${f(wkDel[i],'n')}</td><td>${f(wkEsc[i],'p')}</td><td>${i>0?badge(wkEsc[i],wkEsc[i-1],true):''}</td>`).join('');
+      periodCols=weeks.map((_,i)=>{
+        const v=wkEsc[i], prev=i>0?wkEsc[i-1]:null;
+        const diff=prev!=null?v-prev:0;
+        const isUp=prev!=null&&diff>0.001, isDn=prev!=null&&diff<-0.001;
+        const bg=isUp?'background:#fff0f0;color:#dc2626;':isDn?'background:#f0fdf4;color:#16a34a;':'';
+        const arrow=isUp?'▲':isDn?'▼':'→';
+        return`<td style="border-left:1px solid var(--border)">${f(wkDel[i],'n')}</td>
+          <td style="${bg}font-weight:${prev!=null?700:400}">${f(v,'p')}</td>
+          <td style="${bg}font-size:10px;font-weight:700;text-align:center">${prev!=null?`${arrow} ${Math.abs(diff).toFixed(2)}%`:''}</td>`;
+      }).join('');
     }
     h+=`<tr><td title="${name}">${name}${bchip(name)}</td>
       <td>${f(d.del,'n')}${bar}</td><td>${f(d.esc,'n')}</td>
@@ -1390,7 +1411,20 @@ function renderEsc(){
     const pd=clientPeriodEsc[name]||[];
     h+=`<tr><td title="${name}">${name}${bchip(name)}</td><td>${f(d.del,'n')}</td><td>${f(d.esc,'n')}</td>
       <td><span class="pill ${escCls(d.escP)}">${f(d.escP,'p')}</span></td>`;
-    pd.forEach((v,i)=>{h+=`<td>${f(v,'p')}</td><td>${i>0?badge(v,pd[i-1],true):''}</td>`;});
+    pd.forEach((v,i)=>{
+      if(i===0){
+        h+=`<td>${f(v,'p')}</td><td></td>`;
+      } else {
+        const prev=pd[i-1];
+        const diff=v-prev;
+        const isUp=diff>0.001, isDn=diff<-0.001;
+        const bg=isUp?'background:#fff0f0;color:#dc2626;':isDn?'background:#f0fdf4;color:#16a34a;':'';
+        const arrow=isUp?'▲':isDn?'▼':'→';
+        const absDiff=Math.abs(diff).toFixed(2);
+        h+=`<td style="${bg}font-weight:700">${f(v,'p')}</td>`;
+        h+=`<td style="${bg}font-size:10px;font-weight:700;text-align:center">${arrow} ${absDiff}%</td>`;
+      }
+    });
     h+=`</tr>`;
   });
   h+=`</tbody></table></div></div>`;
