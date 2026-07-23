@@ -1608,6 +1608,60 @@ function renderTrend(){
   const mLbs=mAgg.map(d=>d.mo);
   const lastM=mAgg[mAgg.length-1], prevM=mAgg[mAgg.length-2];
   const top8=clients.slice(0,8);
+
+  // --- QUARTERLY aggregation ---
+  // Map each month label (e.g. "Jan'26") to its quarter
+  function moToQuarter(mo) {
+    const mMap = {"jan":1,"feb":1,"mar":1,"apr":2,"may":2,"jun":2,"jul":3,"aug":3,"sep":3,"oct":4,"nov":4,"dec":4};
+    const m3 = mo.slice(0,3).toLowerCase();
+    const yr  = mo.includes("'") ? '20'+mo.split("'")[1] : new Date().getFullYear();
+    const q   = mMap[m3] || 1;
+    return `Q${q} ${yr}`;
+  }
+  const qMap = {};
+  DB.mom.months.forEach(mObj => {
+    const ql = moToQuarter(mObj.mo);
+    if (!qMap[ql]) qMap[ql] = { lbl:ql, del:0, esc:0, loss:0, lv:0, clients:{} };
+    const q = qMap[ql];
+    q.del += mObj.del; q.esc += mObj.esc; q.loss += mObj.loss; q.lv += mObj.lv;
+    // Per-client within quarter
+    Object.entries(mObj.clients).forEach(([c,d]) => {
+      if (!clients.includes(c)) return;
+      if (!q.clients[c]) q.clients[c] = {del:0,esc:0,loss:0,lv:0};
+      const qc = q.clients[c];
+      qc.del+=d.del; qc.esc+=d.esc; qc.loss+=d.loss; qc.lv+=d.lv;
+    });
+  });
+  // Sort quarters chronologically
+  const qOrder = ['Q1','Q2','Q3','Q4'];
+  const qAgg = Object.values(qMap).sort((a,b)=>{
+    const [qa,ya] = [a.lbl.split(' ')[0], a.lbl.split(' ')[1]];
+    const [qb,yb] = [b.lbl.split(' ')[0], b.lbl.split(' ')[1]];
+    return ya!==yb ? ya.localeCompare(yb) : qOrder.indexOf(qa)-qOrder.indexOf(qb);
+  }).map(q => ({
+    ...q,
+    escP : q.del  > 0 ? q.esc  / q.del  * 100 : 0,
+    laP  : q.esc  > 0 ? q.loss / q.esc  * 100 : 0,
+    cpo  : q.del  > 0 ? q.lv   / q.del        : 0,
+    aov  : q.loss > 0 ? q.lv   / q.loss       : 0
+  }));
+  const qLbs = qAgg.map(q=>q.lbl);
+  const lastQ=qAgg[qAgg.length-1], prevQ=qAgg[qAgg.length-2];
+
+  // Quarterly client aggregation (for per-client quarterly table)
+  const qClientData = {};
+  clients.forEach(c => {
+    qClientData[c] = qAgg.map(q => {
+      const d = q.clients[c] || {del:0,esc:0,loss:0,lv:0};
+      return { ...d,
+        escP: d.del>0?d.esc/d.del*100:0,
+        laP:  d.esc>0?d.loss/d.esc*100:0,
+        cpo:  d.del>0?d.lv/d.del:0,
+        aov:  d.loss>0?d.lv/d.loss:0
+      };
+    });
+  });
+
   let h=`<div class="krow">
     <div class="kpi k-blue"   style="animation-delay:.0s"><div class="lb">Latest Wk Del</div><div class="vl">${f(lastW?.del,'n')}</div><div class="sb">${lastW?.wk?.replace('2026-','')}</div></div>
     <div class="kpi k-red"    style="animation-delay:.05s"><div class="lb">Latest Wk Esc %</div><div class="vl">${f(lastW?.escP,'p')}</div><div class="sb">${badge(lastW?.escP,prevW?.escP,true)} WoW</div></div>
@@ -1616,6 +1670,107 @@ function renderTrend(){
     <div class="kpi k-green"  style="animation-delay:.2s"><div class="lb">Latest Mo LA %</div><div class="vl">${f(lastM?.laP,'p')}</div><div class="sb">${badge(lastM?.laP,prevM?.laP,false)} MoM</div></div>
     <div class="kpi k-purple" style="animation-delay:.25s"><div class="lb">Latest Mo CPO</div><div class="vl">${f(lastM?.cpo,'cpo')}</div><div class="sb">Loss Amt ÷ Del Count</div></div>
   </div>
+
+  <!-- ══ QUARTERLY SECTION ══════════════════════════════════ -->
+  <div style="display:flex;align-items:center;gap:10px;margin:18px 0 10px">
+    <div style="font-size:13px;font-weight:700;color:var(--text)">📊 Quarterly View</div>
+    <div style="flex:1;height:1px;background:var(--border)"></div>
+    <div style="font-size:10px;color:var(--text3)">${qAgg.length} quarter${qAgg.length!==1?'s':''} of data</div>
+  </div>
+
+  <!-- Quarterly KPI cards -->
+  <div class="krow" style="margin-bottom:10px">
+    <div class="kpi k-blue"   style="animation-delay:.0s"><div class="lb">Latest Qtr Del</div><div class="vl">${f(lastQ?.del,'n')}</div><div class="sb">${lastQ?.lbl||'—'} · ${badge(lastQ?.del,prevQ?.del,false)} QoQ</div></div>
+    <div class="kpi k-red"    style="animation-delay:.05s"><div class="lb">Latest Qtr Esc %</div><div class="vl">${f(lastQ?.escP,'p')}</div><div class="sb">${badge(lastQ?.escP,prevQ?.escP,true)} QoQ</div></div>
+    <div class="kpi k-green"  style="animation-delay:.1s"><div class="lb">Latest Qtr LA %</div><div class="vl">${f(lastQ?.laP,'p')}</div><div class="sb">${badge(lastQ?.laP,prevQ?.laP,false)} QoQ</div></div>
+    <div class="kpi k-amber"  style="animation-delay:.15s"><div class="lb">Latest Qtr AOV</div><div class="vl">${f(lastQ?.aov,'cpo')}</div><div class="sb">${badge(lastQ?.aov,prevQ?.aov,false)} QoQ</div></div>
+    <div class="kpi k-purple" style="animation-delay:.2s"><div class="lb">Latest Qtr CPO</div><div class="vl">${f(lastQ?.cpo,'cpo')}</div><div class="sb">${badge(lastQ?.cpo,prevQ?.cpo,true)} QoQ</div></div>
+    <div class="kpi k-teal"   style="animation-delay:.25s"><div class="lb">Latest Qtr Loss Val</div><div class="vl">${f(lastQ?.lv,'rv')}</div><div class="sb">${lastQ?.lbl||'—'}</div></div>
+  </div>
+
+  <!-- Quarterly charts -->
+  <div class="grid2">
+    <div class="card"><div class="card-title">Deliveries — Quarter on Quarter</div><div style="position:relative;height:220px"><canvas id="qDC"></canvas></div></div>
+    <div class="card"><div class="card-title">Esc % + Del Count — QoQ (Combo)</div><div style="position:relative;height:220px"><canvas id="qEC"></canvas></div></div>
+  </div>
+  <div class="grid2">
+    <div class="card"><div class="card-title">LA % — QoQ</div><div style="position:relative;height:220px"><canvas id="qLC"></canvas></div></div>
+    <div class="card"><div class="card-title">AOV & CPO — QoQ</div><div style="position:relative;height:220px"><canvas id="qAC"></canvas></div></div>
+  </div>
+
+  <!-- Quarterly summary table -->
+  <div class="card"><div class="card-title">Quarterly Summary <span class="card-hint">↕ sort · QoQ Δ shown in colour</span></div>
+  <div class="tw"><table><thead><tr>
+    ${thF('Quarter',0,false,'trendQ')}${thF('Del',1,true,'trendQ')}${thF('QoQ Δ Del',2,false,'trendQ')}${thF('Esc',3,true,'trendQ')}${thF('Esc %',4,true,'trendQ')}${thF('QoQ Δ Esc%',5,false,'trendQ')}${thF('Loss',6,true,'trendQ')}${thF('LA %',7,true,'trendQ')}${thF('QoQ Δ LA%',8,false,'trendQ')}${thF('Loss Value',9,true,'trendQ')}${thF('AOV',10,true,'trendQ')}${thF('CPO',11,true,'trendQ')}
+  </tr></thead><tbody>`;
+  qAgg.forEach((q,i)=>{
+    const p=i>0?qAgg[i-1]:null;
+    const dDiff=p?q.del-p.del:null;
+    const eDiff=p?q.escP-p.escP:null;
+    const lDiff=p?q.laP-p.laP:null;
+    const dBg=dDiff==null?'':dDiff>0?'background:#f0fdf4;color:#16a34a':'background:#fff0f0;color:#dc2626';
+    const eBg=eDiff==null?'':eDiff>0?'background:#fff0f0;color:#dc2626':'background:#f0fdf4;color:#16a34a';
+    const lBg=lDiff==null?'':lDiff>0?'background:#f0fdf4;color:#16a34a':'background:#fff0f0;color:#dc2626';
+    h+=`<tr>
+      <td><strong style="color:var(--purple)">${q.lbl}</strong></td>
+      <td>${f(q.del,'n')}</td>
+      <td style="${dBg};font-weight:700;font-size:10px">${dDiff!=null?(dDiff>=0?'▲ ':'▼ ')+f(Math.abs(dDiff),'n'):'—'}</td>
+      <td>${f(q.esc,'n')}</td>
+      <td><span class="pill ${escCls(q.escP)}">${f(q.escP,'p')}</span></td>
+      <td style="${eBg};font-weight:700;font-size:10px">${eDiff!=null?(eDiff>=0?'▲ ':'▼ ')+Math.abs(eDiff).toFixed(2)+'%':'—'}</td>
+      <td>${f(q.loss,'n')}</td>
+      <td><span class="pill ${laCls(q.laP)}">${f(q.laP,'p')}</span></td>
+      <td style="${lBg};font-weight:700;font-size:10px">${lDiff!=null?(lDiff>=0?'▲ ':'▼ ')+Math.abs(lDiff).toFixed(2)+'%':'—'}</td>
+      <td>${f(q.lv,'rv')}</td>
+      <td><strong style="color:#d97706">${f(q.aov,'cpo')}</strong></td>
+      <td><strong style="color:#7c3aed">${f(q.cpo,'cpo')}</strong></td>
+    </tr>`;
+  });
+  h+=`</tbody></table></div></div>
+
+  <!-- Per-client quarterly table -->
+  <div class="card"><div class="card-title">Client-wise Quarterly Breakdown <span class="card-hint">Del · Esc % · LA % per quarter</span></div>
+  <div class="tw"><table><thead><tr>
+    <th style="text-align:left;position:sticky;top:0;background:var(--surface)">Client</th>
+    ${qAgg.map(q=>`<th style="border-left:2px solid var(--border);text-align:center;color:var(--purple)" colspan="4">${q.lbl}</th>`).join('')}
+  </tr>
+  <tr>
+    <th></th>
+    ${qAgg.map(()=>'<th style="border-left:2px solid var(--border)">Del</th><th>Esc %</th><th>LA %</th><th>CPO</th>').join('')}
+  </tr></thead><tbody>`;
+
+  // Sort clients by total del desc
+  const sortedClientsQ = [...clients].sort((a,b)=>{
+    const da=qAgg.reduce((s,q)=>s+(q.clients[a]?.del||0),0);
+    const db=qAgg.reduce((s,q)=>s+(q.clients[b]?.del||0),0);
+    return db-da;
+  });
+  sortedClientsQ.forEach(c=>{
+    h+=`<tr><td title="${c}" style="font-weight:600">${c}${bchip(c)}</td>`;
+    qAgg.forEach((q,qi)=>{
+      const d=q.clients[c]||{del:0,esc:0,loss:0,lv:0};
+      const escP=d.del>0?d.esc/d.del*100:0;
+      const laP =d.esc>0?d.loss/d.esc*100:0;
+      const cpo =d.del>0?d.lv/d.del:0;
+      const prev=qi>0?qAgg[qi-1].clients[c]||{del:0,esc:0,loss:0,lv:0}:null;
+      const prevEscP=prev&&prev.del>0?prev.esc/prev.del*100:null;
+      const eDiff=prevEscP!=null?escP-prevEscP:null;
+      const eBg=eDiff==null?'':eDiff>0.001?'background:#fff0f0':'background:#f0fdf4';
+      h+=`<td style="border-left:2px solid var(--border)">${d.del>0?f(d.del,'n'):'—'}</td>`;
+      h+=`<td style="${eBg}"><span class="pill ${d.del>0?escCls(escP):'pn'}">${d.del>0?f(escP,'p'):'—'}</span></td>`;
+      h+=`<td>${d.esc>0?f(laP,'p'):'—'}</td>`;
+      h+=`<td>${d.del>0?f(cpo,'cpo'):'—'}</td>`;
+    });
+    h+=`</tr>`;
+  });
+  h+=`</tbody></table></div></div>
+
+  <!-- ══ WEEKLY/MONTHLY CHARTS ═════════════════════════════ -->
+  <div style="display:flex;align-items:center;gap:10px;margin:18px 0 10px">
+    <div style="font-size:13px;font-weight:700;color:var(--text)">📈 Week & Month Trends</div>
+    <div style="flex:1;height:1px;background:var(--border)"></div>
+  </div>
+
   <div class="grid2">
     <div class="card"><div class="card-title">Delivery Trend — Week on Week</div><div style="position:relative;height:220px"><canvas id="tDW"></canvas></div></div>
     <div class="card"><div class="card-title">Delivery Trend — Month on Month</div><div style="position:relative;height:220px"><canvas id="tDM"></canvas></div></div>
@@ -1669,7 +1824,31 @@ function renderTrend(){
   });
   h+=`</tbody></table></div></div>`;
   document.getElementById('s-trend').innerHTML=h;
-  const mc = SEL_CLIENTS.length >= 2;  // multi-client mode
+
+  // ── Quarterly charts ──────────────────────────────────────
+  lineChart('qDC',qLbs,
+    SEL_CLIENTS.length>=2
+      ? clients.slice(0,12).map((c,i)=>({label:c,color:PAL[i%10],data:qAgg.map(q=>{const d=q.clients[c];return d&&d.del>0?d.del:null;})}))
+      : [{label:'Deliveries',color:'#3b82f6',data:qAgg.map(q=>q.del)}],
+    v=>f(v,'n'));
+
+  comboChart('qEC',qLbs,
+    {label:'Del Count',color:'#94a3b8',data:qAgg.map(q=>q.del)},
+    {label:'Esc %',   color:'#ef4444', data:qAgg.map(q=>q.escP)},
+    v=>f(v,'n'), v=>v.toFixed(2)+'%');
+
+  lineChart('qLC',qLbs,
+    SEL_CLIENTS.length>=2
+      ? clients.slice(0,12).map((c,i)=>({label:c,color:PAL[i%10],data:qAgg.map(q=>{const d=q.clients[c];return d&&d.esc>0?d.loss/d.esc*100:null;})}))
+      : [{label:'LA %',color:'#10b981',data:qAgg.map(q=>q.laP)}],
+    v=>v.toFixed(2)+'%');
+
+  lineChart('qAC',qLbs,[
+    {label:'AOV',color:'#f59e0b',data:qAgg.map(q=>q.aov)},
+    {label:'CPO',color:'#8b5cf6',data:qAgg.map(q=>q.cpo)}
+  ],v=>'₹'+v.toFixed(2));
+
+  const mc = SEL_CLIENTS.length >= 2;
 
   if (mc) {
     // All trend charts show one line per selected client
