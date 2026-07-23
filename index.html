@@ -1596,27 +1596,33 @@ function renderAOV(){
 
 // ════════ TREND VIEW (WoW + MoM combined) ════════
 function renderTrend(){
-  const clients=filteredClients();
-  // --- WEEK view ---
-  const weeks=getWeeks();
-  const wAgg=weekAgg(weeks,clients);
-  const wLbs=wAgg.map(d=>d.wk.replace('2026-',''));
-  const lastW=wAgg[wAgg.length-1], prevW=wAgg[wAgg.length-2];
-  // --- MONTH view ---
-  const months=DB.meta.months;
-  const mAgg=monthAggForClients(months,clients);
-  const mLbs=mAgg.map(d=>d.mo);
-  const lastM=mAgg[mAgg.length-1], prevM=mAgg[mAgg.length-2];
-  const top8=clients.slice(0,8);
+  const clients = filteredClients();
 
-  // --- QUARTERLY aggregation ---
-  // Map each month label (e.g. "Jan'26") to its quarter
+  // ── FILTERED data → used for KPI cards and trend charts ───────────────
+  const weeks  = getWeeks();                        // respects week filter
+  const wAgg   = weekAgg(weeks, clients);
+  const wLbs   = wAgg.map(d=>d.wk.replace('2026-',''));
+  const lastW  = wAgg[wAgg.length-1], prevW = wAgg[wAgg.length-2];
+
+  const months = DB.meta.months;                    // all months always
+  const mAgg   = monthAggForClients(months, clients);
+  const mLbs   = mAgg.map(d=>d.mo);
+  const lastM  = mAgg[mAgg.length-1], prevM = mAgg[mAgg.length-2];
+  const top8   = clients.slice(0,8);
+
+  // ── ALL data → summaries always show complete picture ─────────────────
+  const allWeeks = DB.wow.weeks;                    // every week in the sheet
+  const allWAgg  = weekAgg(allWeeks, clients);      // client-filtered but all weeks
+
+  const allMonths = DB.meta.months;                 // every month
+  const allMAgg   = monthAggForClients(allMonths, clients);
+
+  // ── QUARTERLY aggregation (always uses all months) ────────────────────
   function moToQuarter(mo) {
-    const mMap = {"jan":1,"feb":1,"mar":1,"apr":2,"may":2,"jun":2,"jul":3,"aug":3,"sep":3,"oct":4,"nov":4,"dec":4};
+    const mMap = {jan:1,feb:1,mar:1,apr:2,may:2,jun:2,jul:3,aug:3,sep:3,oct:4,nov:4,dec:4};
     const m3 = mo.slice(0,3).toLowerCase();
     const yr  = mo.includes("'") ? '20'+mo.split("'")[1] : new Date().getFullYear();
-    const q   = mMap[m3] || 1;
-    return `Q${q} ${yr}`;
+    return `Q${mMap[m3]||1} ${yr}`;
   }
   const qMap = {};
   DB.mom.months.forEach(mObj => {
@@ -1793,11 +1799,16 @@ function renderTrend(){
   </div>
   <div class="card"><div class="card-title">Top 8 Clients Esc % — WoW</div><div style="position:relative;height:250px"><canvas id="tC8W"></canvas></div></div>
   <div class="card"><div class="card-title">Top 8 Clients Esc % — MoM</div><div style="position:relative;height:250px"><canvas id="tC8M"></canvas></div></div>
-  <div class="card"><div class="card-title">Week-wise Summary <span class="card-hint">↕ click headers to sort</span></div>
+  <div style="display:flex;align-items:center;gap:10px;margin:18px 0 10px">
+    <div style="font-size:13px;font-weight:700;color:var(--text)">📋 Full Summary Tables</div>
+    <div style="flex:1;height:1px;background:var(--border)"></div>
+    <div style="font-size:10px;color:var(--text3)">Always showing all data regardless of filters above</div>
+  </div>
+  <div class="card"><div class="card-title">Week-wise Summary <span class="card-hint">All ${allWAgg.length} weeks · ↕ sort</span></div>
   <div class="tw"><table><thead><tr>
     ${thF('Week',0,false,'trendW')}${thF('Deliveries',1,true,'trendW')}${thF('Esc Count',2,true,'trendW')}${thF('Esc %',3,true,'trendW')}${thF('Loss Count',4,true,'trendW')}${thF('LA %',5,true,'trendW')}${thF('Loss Value',6,true,'trendW')}${thF('AOV',7,true,'trendW')}${thF('CPO',8,true,'trendW')}
   </tr></thead><tbody>`;
-  const wRows = wAgg.map((d,i)=>[d.wk.replace('2026-',''),d.del,d.esc,d.escP,d.loss,d.laP,d.lv,d.aov,d.cpo,i>0?wAgg[i-1]:null]);
+  const wRows = allWAgg.map((d,i)=>[d.wk.replace('2026-',''),d.del,d.esc,d.escP,d.loss,d.laP,d.lv,d.aov,d.cpo,i>0?allWAgg[i-1]:null]);
   const wS = getSort('trendW','__none__','asc');
   const wSorted = wS.col==='__none__' ? wRows : sortRows(wRows,parseInt(wS.col),wS.col!=='0','trendW');
   wSorted.forEach((r)=>{
@@ -1808,11 +1819,11 @@ function renderTrend(){
       <td>${f(r[6],'rv')}</td><td>${f(r[7],'cpo')}</td><td>${f(r[8],'cpo')}</td></tr>`;
   });
   h+=`</tbody></table></div></div>
-  <div class="card"><div class="card-title">Month-wise Summary <span class="card-hint">↕ click headers to sort</span></div>
+  <div class="card"><div class="card-title">Month-wise Summary <span class="card-hint">All ${allMAgg.length} months · ↕ sort</span></div>
   <div class="tw"><table><thead><tr>
     ${thF('Month',0,false,'trendM')}${thF('Deliveries',1,true,'trendM')}${thF('Esc Count',2,true,'trendM')}${thF('Esc %',3,true,'trendM')}${thF('Loss Count',4,true,'trendM')}${thF('LA %',5,true,'trendM')}${thF('Loss Value',6,true,'trendM')}${thF('AOV',7,true,'trendM')}${thF('CPO',8,true,'trendM')}
   </tr></thead><tbody>`;
-  const mRows = mAgg.map((d,i)=>[d.mo,d.del,d.esc,d.escP,d.loss,d.laP,d.lv,d.aov,d.cpo,i>0?mAgg[i-1]:null]);
+  const mRows = allMAgg.map((d,i)=>[d.mo,d.del,d.esc,d.escP,d.loss,d.laP,d.lv,d.aov,d.cpo,i>0?allMAgg[i-1]:null]);
   const mS = getSort('trendM','__none__','asc');
   const mSorted = mS.col==='__none__' ? mRows : sortRows(mRows,parseInt(mS.col),mS.col!=='0','trendM');
   mSorted.forEach((r)=>{
