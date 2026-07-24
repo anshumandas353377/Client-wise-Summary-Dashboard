@@ -7,6 +7,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/gitbrent/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
 <style>
 :root{
   --bg:#f4f6fb;--surface:#fff;--surface2:#f0f3fa;--border:#e2e8f0;
@@ -52,6 +53,7 @@ input[type=text]{width:130px;}
 .msel-count{font-size:10px;color:var(--text3);}
 .msel-apply{font-size:11px;padding:5px 14px;border-radius:6px;border:none;background:var(--blue);color:#fff;cursor:pointer;font-family:inherit;font-weight:600;transition:background .15s;}
 .msel-apply:hover{background:#2563eb;}
+.dl-opt:hover{background:var(--surface2);}
 /* period toggle (Week / Month) */
 .period-toggle{display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;}
 .period-btn{font-size:11px;padding:5px 12px;border:none;background:var(--surface);color:var(--text3);cursor:pointer;font-family:inherit;transition:all .15s;}
@@ -253,7 +255,13 @@ tr:last-child td{border-bottom:none;}
         <input type="text" id="srch" placeholder="Search client…" oninput="go()">
       </div>
       <button class="act-btn" onclick="refreshData()">⟳ Refresh</button>
-      <button class="act-btn" id="pdfBtn" onclick="downloadPdf()">⬇ PDF</button>
+      <div class="msel" style="position:relative">
+        <button class="act-btn" onclick="toggleDlMenu(event)" id="dlBtn">⬇ Download ▾</button>
+        <div id="dlMenu" style="display:none;position:absolute;top:calc(100% + 4px);right:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:var(--shm);z-index:500;min-width:200px;overflow:hidden">
+          <button class="dl-opt" onclick="downloadPdf();closeDlMenu()" style="display:block;width:100%;text-align:left;padding:10px 14px;border:none;background:none;cursor:pointer;font-size:12px;font-family:inherit;color:var(--text);border-bottom:1px solid var(--border)">📄 <strong>PDF</strong> — Shadowfax branded slides<br><span style="font-size:10px;color:var(--text3)">Full dashboard as landscape PDF</span></button>
+          <button class="dl-opt" onclick="downloadPpt();closeDlMenu()" style="display:block;width:100%;text-align:left;padding:10px 14px;border:none;background:none;cursor:pointer;font-size:12px;font-family:inherit;color:var(--text)">📊 <strong>PPT</strong> — Editable presentation<br><span style="font-size:10px;color:var(--text3)">Editable tables & text (Shadowfax format)</span></button>
+        </div>
+      </div>
     </div>
   </div>
   <div class="bucket-bar">
@@ -599,54 +607,456 @@ function showError(msg) {
     If 504: run <code>warmCache()</code> in Apps Script editor first, then reload.</div>`;
 }
 
-// ── PDF ────────────────────────────────────────────────────────
+// ── DOWNLOAD MENU ─────────────────────────────────────────────
+function toggleDlMenu(e) {
+  e.stopPropagation();
+  const m = document.getElementById('dlMenu');
+  m.style.display = m.style.display === 'block' ? 'none' : 'block';
+}
+function closeDlMenu() { document.getElementById('dlMenu').style.display = 'none'; }
+document.addEventListener('click', e => {
+  if (!e.target.closest('#dlMenu') && !e.target.closest('#dlBtn')) closeDlMenu();
+});
+
+// Shadowfax brand colours (from PDF template)
+const SFX = {
+  primary : '2A9D8F',   // teal-green (header bar)
+  accent  : 'F4D03F',   // yellow accent line
+  headerTx: 'FFFFFF',
+  darkTx  : '1E2535',
+  tableHdr: '2A9D8F',
+  tableAlt: 'E8F4F2',
+  greenBg : 'D5E8D8',
+  redFlag : 'F8D7DA'
+};
+
+// ── Utility: aggregate all data needed for exports ────────────
+function buildExportData() {
+  if (!DB) return null;
+  const clients = filteredClients();
+  const allWeeks = DB.wow.weeks;
+  const allMonths = DB.meta.months;
+  const wAgg = weekAgg(allWeeks, clients);
+  const mAgg = monthAggForClients(allMonths, clients);
+
+  // Quarterly rollup
+  const mMap = {jan:1,feb:1,mar:1,apr:2,may:2,jun:2,jul:3,aug:3,sep:3,oct:4,nov:4,dec:4};
+  const qMap = {};
+  DB.mom.months.forEach(mo => {
+    const m3 = mo.mo.slice(0,3).toLowerCase();
+    const yr = mo.mo.includes("'") ? "20"+mo.mo.split("'")[1] : ""+new Date().getFullYear();
+    const ql = "Q"+(mMap[m3]||1)+" "+yr;
+    if (!qMap[ql]) qMap[ql] = {lbl:ql, del:0, esc:0, loss:0, lv:0};
+    const filteredDel = clients.reduce((s,c)=>s+(mo.clients[c]?.del||0), 0);
+    const filteredEsc = clients.reduce((s,c)=>s+(mo.clients[c]?.esc||0), 0);
+    const filteredLoss= clients.reduce((s,c)=>s+(mo.clients[c]?.loss||0), 0);
+    const filteredLv  = clients.reduce((s,c)=>s+(mo.clients[c]?.lv||0), 0);
+    qMap[ql].del  += filteredDel;
+    qMap[ql].esc  += filteredEsc;
+    qMap[ql].loss += filteredLoss;
+    qMap[ql].lv   += filteredLv;
+  });
+  const qOrder = ['Q1','Q2','Q3','Q4'];
+  const qAgg = Object.values(qMap).sort((a,b)=>{
+    const [qa,ya] = [a.lbl.split(' ')[0], a.lbl.split(' ')[1]];
+    const [qb,yb] = [b.lbl.split(' ')[0], b.lbl.split(' ')[1]];
+    return ya!==yb ? ya.localeCompare(yb) : qOrder.indexOf(qa)-qOrder.indexOf(qb);
+  }).map(q => ({
+    ...q,
+    escP : q.del  > 0 ? q.esc  / q.del  * 100 : 0,
+    laP  : q.esc  > 0 ? q.loss / q.esc  * 100 : 0,
+    cpo  : q.del  > 0 ? q.lv   / q.del        : 0,
+    aov  : q.loss > 0 ? q.lv   / q.loss       : 0
+  }));
+
+  // Client-level summary
+  const ca = clientAgg(clients, allWeeks);
+  const clientRows = Object.entries(ca)
+    .sort((a,b)=>b[1].del - a[1].del)
+    .map(([name,d])=>({name, ...d}));
+
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'});
+
+  return {
+    clients, clientRows,
+    weeks: allWeeks, wAgg,
+    months: allMonths, mAgg,
+    quarters: qAgg,
+    dateStr,
+    bucket: BKT === 'all' ? 'Overall' : BKT === 'ajio' ? 'AJIO' : 'Non-Meesho Non-AJIO'
+  };
+}
+
+// ── PDF EXPORT (Shadowfax branded, landscape A3) ──────────────
 async function downloadPdf() {
   if (!DB) { alert('Data not loaded yet.'); return; }
-  const btn = document.getElementById('pdfBtn');
-  const orig = btn.innerHTML; btn.innerHTML = '⏳…'; btn.disabled = true;
+  const btn = document.getElementById('dlBtn');
+  const orig = btn.innerHTML; btn.innerHTML = '⏳ PDF…'; btn.disabled = true;
   try {
+    const data = buildExportData();
     const {jsPDF} = window.jspdf;
-    const pdf = new jsPDF('l','pt','a3');
-    const W = pdf.internal.pageSize.getWidth(), H = pdf.internal.pageSize.getHeight(), M = 28;
-    const tabs = [{id:'ov',i:0,title:'Overview'},{id:'esc',i:1,title:'Escalation %'},
-                  {id:'la',i:2,title:'Loss Accepted %'},{id:'aov',i:3,title:'AOV & CPO'},
-                  {id:'trend',i:4,title:'Trend View'}];
-    const tbBtns = document.querySelectorAll('.tab'), origTab = TAB;
-    const ts = new Date().toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+    const pdf = new jsPDF('l', 'pt', 'a3');
+    const W = pdf.internal.pageSize.getWidth();
+    const H = pdf.internal.pageSize.getHeight();
+    const M = 32;
+
+    // ── Slide 1: Cover ─────────────────────────────────────
+    drawSfxBorder(pdf, W, H);
+    pdf.setFontSize(28); pdf.setFont(undefined,'bold');
+    pdf.setTextColor(42,157,143);
+    pdf.text('SHADOWFAX', W/2 - 80, H/2 - 20);
+    pdf.setFontSize(11); pdf.setFont(undefined,'italic');
+    pdf.text('Think ahead!', W/2 - 30, H/2 + 5);
+    pdf.setFontSize(14); pdf.setFont(undefined,'bold'); pdf.setTextColor(30,37,53);
+    pdf.text('Client Wise Summary Dashboard', W/2 - 130, H/2 + 45);
+    pdf.setFontSize(10); pdf.setFont(undefined,'normal'); pdf.setTextColor(100,100,100);
+    pdf.text(data.dateStr + '  ·  Bucket: ' + data.bucket + '  ·  ' + data.clients.length + ' clients',
+      W/2 - 100, H/2 + 62);
+    pdf.setFontSize(8); pdf.setTextColor(150,150,150);
+    pdf.text('www.shadowfax.in', M, H - 24);
+
+    // ── Capture each dashboard tab as-is ───────────────────
+    const tabs = [
+      {id:'ov',    i:0, title:'Overview'},
+      {id:'esc',   i:1, title:'Escalation % Analysis'},
+      {id:'la',    i:2, title:'Loss Accepted % Analysis'},
+      {id:'aov',   i:3, title:'AOV & CPO Analysis'},
+      {id:'trend', i:4, title:'Trend View (Weekly / Monthly / Quarterly)'}
+    ];
+    const tbBtns = document.querySelectorAll('.tab');
+    const origTab = TAB;
     for (let t=0; t<tabs.length; t++) {
       const info = tabs[t];
       sw(info.id, tbBtns[info.i]);
       await new Promise(r => setTimeout(r, 900));
       const el = document.getElementById('s-'+info.id);
       const boxes = el.querySelectorAll('.tw');
-      const saved = []; boxes.forEach(b=>{ saved.push(b.style.cssText); b.style.maxHeight='none'; b.style.overflowY='visible'; });
+      const saved = []; boxes.forEach(b=>{saved.push(b.style.cssText); b.style.maxHeight='none'; b.style.overflowY='visible';});
       await new Promise(r => setTimeout(r,100));
-      const cv = await html2canvas(el,{scale:1.8,backgroundColor:'#fff',useCORS:true,logging:false,windowWidth:1400});
-      boxes.forEach((b,i)=>{ b.style.cssText = saved[i]; });
-      const iW = W-M*2, iH = cv.height*iW/cv.width, cH = H-50-M;
-      if (t>0) pdf.addPage();
-      const drawHdr = (cont) => {
-        pdf.setFillColor(59,130,246); pdf.rect(0,0,W,40,'F');
-        pdf.setTextColor(255,255,255); pdf.setFontSize(13); pdf.setFont(undefined,'bold');
-        pdf.text('Client Wise Summary — '+info.title+(cont?' (cont.)':''), M, 26);
-        pdf.setFontSize(8); pdf.setFont(undefined,'normal'); pdf.text(ts, W-M-110, 26);
-      };
-      drawHdr(false);
+      const cv = await html2canvas(el,{scale:1.6, backgroundColor:'#fff', useCORS:true, logging:false, windowWidth:1400});
+      boxes.forEach((b,i)=>{b.style.cssText=saved[i];});
+      const iW = W - M*2;
+      const iH = cv.height * iW / cv.width;
+      const contentH = H - 78 - M;
+      pdf.addPage();
+      drawSfxHeader(pdf, W, info.title, data.dateStr);
+      drawSfxBorder(pdf, W, H);
       let yo = 0;
       while (yo < iH) {
-        if (yo>0) { pdf.addPage(); drawHdr(true); }
-        const sh = Math.min(cH, iH-yo), sy = yo*(cv.height/iH), sH = sh*(cv.height/iH);
-        const sl = document.createElement('canvas'); sl.width=cv.width; sl.height=Math.ceil(sH);
-        sl.getContext('2d').drawImage(cv, 0,sy, cv.width,sH, 0,0, cv.width,sH);
-        pdf.addImage(sl.toDataURL('image/png'),'PNG', M, 50, iW, sh);
+        if (yo > 0) { pdf.addPage(); drawSfxHeader(pdf, W, info.title+' (cont.)', data.dateStr); drawSfxBorder(pdf, W, H); }
+        const sh = Math.min(contentH, iH - yo);
+        const sy = yo * (cv.height / iH);
+        const sH = sh * (cv.height / iH);
+        const slc = document.createElement('canvas'); slc.width = cv.width; slc.height = Math.ceil(sH);
+        slc.getContext('2d').drawImage(cv, 0, sy, cv.width, sH, 0, 0, cv.width, sH);
+        pdf.addImage(slc.toDataURL('image/png'), 'PNG', M, 65, iW, sh);
         yo += sh;
       }
     }
-    sw(origTab, tbBtns[tabs.findIndex(x=>x.id===origTab)||0]);
-    pdf.save('ClientWise_'+new Date().toISOString().slice(0,10)+'.pdf');
-  } catch(e) { alert('PDF failed: '+e.message); }
-  finally { btn.innerHTML=orig; btn.disabled=false; }
+    sw(origTab, tbBtns[tabs.findIndex(x=>x.id===origTab) || 0]);
+
+    // ── Final: Thank you ───────────────────────────────────
+    pdf.addPage();
+    drawSfxBorder(pdf, W, H);
+    pdf.setFontSize(42); pdf.setFont(undefined,'bold'); pdf.setTextColor(30,37,53);
+    pdf.text('Thank You', W/2 - 90, H/2);
+    pdf.setFontSize(9); pdf.setTextColor(150,150,150);
+    pdf.text('www.shadowfax.in', M, H - 24);
+
+    pdf.save('ClientWise_Dashboard_' + data.dateStr.replace(/[, ]/g,'_') + '.pdf');
+  } catch (e) {
+    console.error('[PDF]', e);
+    alert('PDF failed: ' + e.message);
+  } finally {
+    btn.innerHTML = orig; btn.disabled = false;
+  }
 }
+
+function drawSfxHeader(pdf, W, title, dateStr) {
+  // Green header strip
+  pdf.setFillColor(42,157,143);
+  pdf.rect(0, 0, W, 40, 'F');
+  // Yellow accent line
+  pdf.setFillColor(244,208,63);
+  pdf.rect(0, 40, W, 3, 'F');
+  // Title
+  pdf.setTextColor(255,255,255);
+  pdf.setFontSize(15); pdf.setFont(undefined,'bold');
+  pdf.text(title, W/2 - (title.length * 4), 26);
+  // Date on right
+  pdf.setFontSize(8); pdf.setFont(undefined,'normal');
+  pdf.text(dateStr, W - 100, 26);
+}
+function drawSfxBorder(pdf, W, H) {
+  // Bottom footer strip
+  pdf.setFillColor(42,157,143);
+  pdf.rect(0, H - 18, W, 18, 'F');
+  pdf.setTextColor(255,255,255);
+  pdf.setFontSize(7);
+  pdf.text('www.shadowfax.in', 32, H - 6);
+}
+
+// ── PPT EXPORT (editable, Shadowfax branded) ──────────────────
+async function downloadPpt() {
+  if (!DB) { alert('Data not loaded yet.'); return; }
+  const btn = document.getElementById('dlBtn');
+  const orig = btn.innerHTML; btn.innerHTML = '⏳ PPT…'; btn.disabled = true;
+  try {
+    const data = buildExportData();
+    const pptx = new PptxGenJS();
+    pptx.defineLayout({ name:'SFX_LAYOUT', width:13.33, height:7.5 });
+    pptx.layout = 'SFX_LAYOUT';
+    pptx.author = 'Shadowfax';
+    pptx.title  = 'Client Wise Summary Dashboard';
+
+    // ── Slide 1: Cover ─────────────────────────────────────
+    {
+      const s = pptx.addSlide();
+      s.background = { color:'FFFFFF' };
+      // Green rounded curve on left (approximated with a filled shape)
+      s.addShape(pptx.ShapeType.rect, { x:0, y:0, w:0.15, h:7.5, fill:{color:SFX.primary} });
+      s.addText('SHADOWFAX', { x:1.5, y:2.8, w:10, h:0.8,
+        fontFace:'Calibri', fontSize:44, bold:true, color:SFX.primary, align:'center' });
+      s.addText('Think ahead!', { x:1.5, y:3.6, w:10, h:0.5,
+        fontFace:'Calibri', fontSize:20, italic:true, color:SFX.primary, align:'center' });
+      s.addText('Client Wise Summary Dashboard', { x:1.5, y:4.5, w:10, h:0.5,
+        fontFace:'Calibri', fontSize:24, bold:true, color:SFX.darkTx, align:'center' });
+      s.addText(data.dateStr + '  ·  ' + data.bucket + '  ·  ' + data.clients.length + ' clients',
+        { x:1.5, y:5.1, w:10, h:0.4, fontFace:'Calibri', fontSize:14, color:'666666', align:'center' });
+      s.addText('www.shadowfax.in', { x:0.4, y:7.15, w:3, h:0.3,
+        fontFace:'Calibri', fontSize:9, color:'888888' });
+    }
+
+    // ── Slide 2: Overall QC Loss Summary (Client Level × Month) ─
+    {
+      const s = pptx.addSlide();
+      addSlideHeader(s, pptx, 'Overall QC Loss Summary', data.dateStr);
+      const months = data.months.slice(-6);
+      const headers = ['Client Level', ...months];
+      const rows = [];
+      // Group clients into standard buckets: AJIO, Non-Meesho Non-AJIO
+      const ajio = ['AJIO'];
+      const nonMeesho = data.clients.filter(c => !ajio.includes(c));
+      const bkts = [
+        {label:'AJIO', list:ajio},
+        {label:'Non Meesho Non AJIO', list:nonMeesho}
+      ];
+      bkts.forEach(bkt => {
+        const row = [bkt.label];
+        months.forEach(mo => {
+          const m = DB.mom.months.find(x=>x.mo===mo);
+          if (!m) { row.push('—'); return; }
+          const lv = bkt.list.reduce((s,c)=>s+(m.clients[c]?.lv||0), 0);
+          row.push(lv>0 ? '₹ '+Math.round(lv).toLocaleString('en-IN') : '—');
+        });
+        rows.push(row);
+      });
+      // Total Pickup row
+      const totRow = ['Total Pickup'];
+      months.forEach(mo => {
+        const m = DB.mom.months.find(x=>x.mo===mo);
+        totRow.push(m ? Math.round(m.del).toLocaleString('en-IN') : '—');
+      });
+      rows.push(totRow);
+      // Overall Loss row
+      const olRow = ['Overall Loss Value'];
+      months.forEach(mo => {
+        const m = DB.mom.months.find(x=>x.mo===mo);
+        olRow.push(m ? '₹ '+Math.round(m.lv).toLocaleString('en-IN') : '—');
+      });
+      rows.push(olRow);
+      // CPO row
+      const cpoRow = ['Projected CPO'];
+      months.forEach(mo => {
+        const m = DB.mom.months.find(x=>x.mo===mo);
+        cpoRow.push(m ? '₹ '+m.cpo.toFixed(2) : '—');
+      });
+      rows.push(cpoRow);
+
+      addSfxTable(s, headers, rows, {x:0.4, y:1.0, w:12.5});
+    }
+
+    // ── Slide 3: Weekly Summary ────────────────────────────
+    {
+      const s = pptx.addSlide();
+      addSlideHeader(s, pptx, 'Weekly Trend Summary — All Weeks', data.dateStr);
+      const headers = ['Week', 'Deliveries', 'Esc Count', 'Esc %', 'Loss Count', 'LA %', 'Loss Value', 'AOV', 'CPO'];
+      const rows = data.wAgg.map(d => [
+        d.wk.replace('2026-',''),
+        Math.round(d.del).toLocaleString('en-IN'),
+        Math.round(d.esc).toLocaleString('en-IN'),
+        d.escP.toFixed(2)+'%',
+        Math.round(d.loss).toLocaleString('en-IN'),
+        d.laP.toFixed(2)+'%',
+        '₹ '+Math.round(d.lv).toLocaleString('en-IN'),
+        '₹ '+d.aov.toFixed(2),
+        '₹ '+d.cpo.toFixed(2)
+      ]);
+      addSfxTable(s, headers, rows, {x:0.4, y:1.0, w:12.5, fontSize:9});
+    }
+
+    // ── Slide 4: Monthly Summary ───────────────────────────
+    {
+      const s = pptx.addSlide();
+      addSlideHeader(s, pptx, 'Monthly Trend Summary — All Months', data.dateStr);
+      const headers = ['Month', 'Deliveries', 'Esc Count', 'Esc %', 'Loss Count', 'LA %', 'Loss Value', 'AOV', 'CPO'];
+      const rows = data.mAgg.map(d => [
+        d.mo,
+        Math.round(d.del).toLocaleString('en-IN'),
+        Math.round(d.esc).toLocaleString('en-IN'),
+        d.escP.toFixed(2)+'%',
+        Math.round(d.loss).toLocaleString('en-IN'),
+        d.laP.toFixed(2)+'%',
+        '₹ '+Math.round(d.lv).toLocaleString('en-IN'),
+        '₹ '+d.aov.toFixed(2),
+        '₹ '+d.cpo.toFixed(2)
+      ]);
+      addSfxTable(s, headers, rows, {x:0.4, y:1.0, w:12.5, fontSize:10});
+    }
+
+    // ── Slide 5: Quarterly Summary ─────────────────────────
+    {
+      const s = pptx.addSlide();
+      addSlideHeader(s, pptx, 'Quarterly Trend Summary', data.dateStr);
+      const headers = ['Quarter', 'Deliveries', 'Esc Count', 'Esc %', 'Loss Count', 'LA %', 'Loss Value', 'AOV', 'CPO'];
+      const rows = data.quarters.map(q => [
+        q.lbl,
+        Math.round(q.del).toLocaleString('en-IN'),
+        Math.round(q.esc).toLocaleString('en-IN'),
+        q.escP.toFixed(2)+'%',
+        Math.round(q.loss).toLocaleString('en-IN'),
+        q.laP.toFixed(2)+'%',
+        '₹ '+Math.round(q.lv).toLocaleString('en-IN'),
+        '₹ '+q.aov.toFixed(2),
+        '₹ '+q.cpo.toFixed(2)
+      ]);
+      addSfxTable(s, headers, rows, {x:0.4, y:1.0, w:12.5, fontSize:11});
+    }
+
+    // ── Slide 6: Client-wise Overall Summary ───────────────
+    {
+      const s = pptx.addSlide();
+      addSlideHeader(s, pptx, 'Client-wise Overall Summary (Ranked by Deliveries)', data.dateStr);
+      const headers = ['Client', 'Del', 'Esc', 'Esc %', 'Loss', 'LA %', 'Loss Value', 'AOV', 'CPO'];
+      const rows = data.clientRows.slice(0, 25).map(c => [
+        c.name,
+        Math.round(c.del).toLocaleString('en-IN'),
+        Math.round(c.esc).toLocaleString('en-IN'),
+        c.escP.toFixed(2)+'%',
+        Math.round(c.loss).toLocaleString('en-IN'),
+        c.laP.toFixed(2)+'%',
+        '₹ '+Math.round(c.lv).toLocaleString('en-IN'),
+        c.aov > 0 ? '₹ '+c.aov.toFixed(2) : '—',
+        c.cpo > 0 ? '₹ '+c.cpo.toFixed(2) : '—'
+      ]);
+      addSfxTable(s, headers, rows, {x:0.3, y:1.0, w:12.7, fontSize:9});
+    }
+
+    // ── Slide 7: Key Insights ─────────────────────────────
+    {
+      const s = pptx.addSlide();
+      addSlideHeader(s, pptx, 'Key Insights & Observations', data.dateStr);
+      const lastW = data.wAgg[data.wAgg.length-1];
+      const prevW = data.wAgg[data.wAgg.length-2];
+      const lastM = data.mAgg[data.mAgg.length-1];
+      const prevM = data.mAgg[data.mAgg.length-2];
+      const lastQ = data.quarters[data.quarters.length-1];
+      const topClient = data.clientRows[0];
+      const highEsc = [...data.clientRows].sort((a,b)=>b.escP-a.escP)[0];
+
+      const insights = [];
+      if (lastW && prevW) {
+        const dir = lastW.escP > prevW.escP ? 'increased' : 'decreased';
+        insights.push(`Latest week Esc% ${dir} to ${lastW.escP.toFixed(2)}% from ${prevW.escP.toFixed(2)}% (Δ ${Math.abs(lastW.escP-prevW.escP).toFixed(2)}%)`);
+      }
+      if (lastM && prevM) {
+        const dir = lastM.laP > prevM.laP ? 'improved' : 'dropped';
+        insights.push(`Latest month LA% ${dir} to ${lastM.laP.toFixed(2)}% from ${prevM.laP.toFixed(2)}% (${lastM.mo} vs ${prevM.mo})`);
+      }
+      if (lastQ) {
+        insights.push(`Latest quarter (${lastQ.lbl}) CPO: ₹${lastQ.cpo.toFixed(2)}  ·  AOV: ₹${lastQ.aov.toFixed(2)}`);
+      }
+      if (topClient) {
+        insights.push(`Top delivery volume: ${topClient.name} — ${Math.round(topClient.del).toLocaleString('en-IN')} deliveries, ${topClient.escP.toFixed(2)}% Esc, ${topClient.laP.toFixed(2)}% LA`);
+      }
+      if (highEsc) {
+        insights.push(`Highest Esc% client: ${highEsc.name} at ${highEsc.escP.toFixed(2)}%`);
+      }
+      insights.push(`Bucket in view: ${data.bucket} · ${data.clients.length} clients · ${data.wAgg.length} weeks · ${data.mAgg.length} months · ${data.quarters.length} quarters`);
+
+      const bulletTexts = insights.map(t => ({ text: t, options:{ bullet:{code:'25CF'}, fontSize:14, color:SFX.darkTx, paraSpaceAfter:8 }}));
+      s.addText(bulletTexts, { x:0.6, y:1.2, w:12.0, h:5.5, fontFace:'Calibri' });
+    }
+
+    // ── Final: Thank you ─────────────────────────────────
+    {
+      const s = pptx.addSlide();
+      s.background = { color:'FFFFFF' };
+      s.addShape(pptx.ShapeType.rect, { x:0, y:0, w:0.15, h:7.5, fill:{color:SFX.primary} });
+      s.addText('Thank You', { x:1.5, y:3.0, w:10, h:1.2,
+        fontFace:'Calibri', fontSize:60, bold:true, color:SFX.darkTx, align:'center' });
+      s.addText('www.shadowfax.in', { x:0.4, y:7.15, w:3, h:0.3,
+        fontFace:'Calibri', fontSize:9, color:'888888' });
+    }
+
+    await pptx.writeFile({ fileName: 'ClientWise_Dashboard_' + data.dateStr.replace(/[, ]/g,'_') + '.pptx' });
+  } catch (e) {
+    console.error('[PPT]', e);
+    alert('PPT failed: ' + e.message);
+  } finally {
+    btn.innerHTML = orig; btn.disabled = false;
+  }
+}
+
+// PPT helper: draw Shadowfax-style header on a slide
+function addSlideHeader(s, pptx, title, dateStr) {
+  s.background = { color:'FFFFFF' };
+  // Green title bar
+  s.addShape(pptx.ShapeType.rect, { x:0, y:0, w:13.33, h:0.55, fill:{color:SFX.primary} });
+  // Yellow accent line
+  s.addShape(pptx.ShapeType.rect, { x:0, y:0.55, w:13.33, h:0.06, fill:{color:SFX.accent} });
+  s.addText(title, { x:0.4, y:0.05, w:10.5, h:0.5,
+    fontFace:'Calibri', fontSize:20, bold:true, italic:true, color:'FFFFFF' });
+  s.addText(dateStr, { x:10.9, y:0.13, w:2.2, h:0.35,
+    fontFace:'Calibri', fontSize:10, color:'FFFFFF', align:'right' });
+  // Footer
+  s.addShape(pptx.ShapeType.rect, { x:0, y:7.25, w:13.33, h:0.25, fill:{color:SFX.primary} });
+  s.addText('www.shadowfax.in', { x:0.4, y:7.28, w:3, h:0.2,
+    fontFace:'Calibri', fontSize:9, color:'FFFFFF' });
+}
+
+// PPT helper: draw a Shadowfax-styled table
+function addSfxTable(s, headers, rows, opts) {
+  const fontSize = opts.fontSize || 11;
+  const table = [];
+  // Header row
+  table.push(headers.map(h => ({
+    text: h,
+    options: {
+      bold: true, fontSize: fontSize+1, color: 'FFFFFF', fill: {color:SFX.primary},
+      align:'center', valign:'middle', fontFace:'Calibri'
+    }
+  })));
+  // Data rows (alternating fill)
+  rows.forEach((row, ri) => {
+    table.push(row.map((cell, ci) => ({
+      text: String(cell),
+      options: {
+        fontSize, color:SFX.darkTx,
+        fill: {color: ri%2===0 ? 'FFFFFF' : SFX.tableAlt},
+        align: ci===0 ? 'left' : 'center',
+        valign:'middle', fontFace:'Calibri', bold: ci===0
+      }
+    })));
+  });
+  s.addTable(table, {
+    x: opts.x, y: opts.y, w: opts.w,
+    border: { pt:0.5, color:'CCCCCC' },
+    rowH: 0.32
+  });
+}
+
 
 // ── PERIOD TOGGLE ─────────────────────────────────────────────
 function setPeriod(p) {
