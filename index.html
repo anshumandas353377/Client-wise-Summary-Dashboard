@@ -812,9 +812,11 @@ async function downloadPpt() {
     const allWeeks  = DB.wow.weeks;
     const allMonths = DB.meta.months;
     const last8w    = allWeeks.slice(-8);
+    const last12w   = allWeeks.slice(-12);
     const last2m    = allMonths.slice(-2);
     const janToCur  = allMonths; // Jan'26 onwards (already starts from Jan)
     const curMo     = allMonths[allMonths.length-1] || '';
+    const tenure    = "Jan'26 → " + curMo + ' · ' + allClients.length + ' clients · ' + data.dateStr;
 
     // Buckets
     const ajioList    = ['AJIO'];
@@ -853,6 +855,7 @@ async function downloadPpt() {
     // Pre-compute bucket aggregates
     buckets.forEach(b=>{
       b.w8  = weekAgg(last8w, b.clients);
+      b.w12 = weekAgg(last12w, b.clients);
       b.m2  = monthAggForClients(last2m, b.clients);
       b.mAll= monthAggForClients(janToCur, b.clients);
       b.qtr = buildQuarters(b.clients);
@@ -892,7 +895,7 @@ async function downloadPpt() {
       s.addText('Client Wise Summary Dashboard',{x:1.5,y:3.9,w:10,h:0.5,fontFace:'Calibri',fontSize:24,bold:true,color:SFX.darkTx,align:'center'});
       s.addText('Meesho & FTPL Excluded',{x:1.5,y:4.4,w:10,h:0.35,fontFace:'Calibri',fontSize:13,color:'DC2626',align:'center'});
       const ctx = [
-        'Last 8 Weeks: '+last8w[0].replace('2026-','')+' → '+last8w[last8w.length-1].replace('2026-',''),
+        'Last 12 Weeks: '+last12w[0].replace('2026-','')+' → '+last12w[last12w.length-1].replace('2026-',''),
         'Last 2 Months: '+last2m.join(', '),
         "Jan'26 → "+curMo+' ('+janToCur.length+' months)',
         'Quarterly: '+buckets[0].qtr.map(q=>q.lbl).join(', '),
@@ -905,7 +908,7 @@ async function downloadPpt() {
     // ═══════ SLIDE 2: EXECUTIVE SUMMARY — Bucket Comparison ═══
     {
       const s=pptx.addSlide();
-      addSlideHeader(s,pptx,'Executive Summary — Bucket Comparison (All Data)',data.dateStr);
+      addSlideHeader(s,pptx,'Executive Summary — Bucket Comparison (All Data)',data.dateStr,tenure);
       const bH=['Metric',...buckets.map(b=>b.label)];
       const tot=b=>{const t=b.wAll.reduce((a,d)=>({del:a.del+d.del,esc:a.esc+d.esc,loss:a.loss+d.loss,lv:a.lv+d.lv}),{del:0,esc:0,loss:0,lv:0});return t;};
       const ts=buckets.map(b=>tot(b));
@@ -922,43 +925,86 @@ async function downloadPpt() {
       addSfxTable(s,bH,bR,{x:0.4,y:0.9,w:12.5,fontSize:12,rowH:0.42});
     }
 
-    // ═══════ SECTION A: LAST 8 WEEKS ═════════════════════════
-    // Overview charts: Del + Esc% + CPO + LA% (bucket-wise, last 8 weeks)
+    // ═══════ TAB SLIDES: Top 25 Client Tables ═════════════════
+    {
+      const ca=clientAgg(allClients,allWeeks);
+      const actAll=Object.entries(ca).filter(([,d])=>d.del>0);
+
+      // Overview — Top 25 by Highest CPO
+      const top25cpo=[...actAll].sort((a,b)=>b[1].cpo-a[1].cpo).slice(0,25);
+      const ovHdr=['#','Client','Del','Esc','Esc%','Loss','LA%','Loss Value','AOV','CPO'];
+      const ovRows=top25cpo.map(([c,d],i)=>[String(i+1),c,Math.round(d.del).toLocaleString('en-IN'),
+        Math.round(d.esc).toLocaleString('en-IN'),d.escP.toFixed(2)+'%',
+        Math.round(d.loss).toLocaleString('en-IN'),d.laP.toFixed(2)+'%',
+        '₹'+Math.round(d.lv).toLocaleString('en-IN'),'₹'+d.aov.toFixed(2),'₹'+d.cpo.toFixed(2)]);
+      paginateTable(pptx,'Overview — Top 25 Clients by Highest CPO',data.dateStr,ovHdr,ovRows,25,tenure);
+
+      // Escalation % — Top 25 by Highest Esc%
+      const top25esc=[...actAll].sort((a,b)=>b[1].escP-a[1].escP).slice(0,25);
+      const escHdr=['#','Client','Del','Esc','Esc%','Loss','LA%','Loss Value','CPO'];
+      const escRows=top25esc.map(([c,d],i)=>[String(i+1),c,Math.round(d.del).toLocaleString('en-IN'),
+        Math.round(d.esc).toLocaleString('en-IN'),d.escP.toFixed(2)+'%',
+        Math.round(d.loss).toLocaleString('en-IN'),d.laP.toFixed(2)+'%',
+        '₹'+Math.round(d.lv).toLocaleString('en-IN'),'₹'+d.cpo.toFixed(2)]);
+      paginateTable(pptx,'Escalation % — Top 25 Clients by Highest Esc%',data.dateStr,escHdr,escRows,25,tenure);
+
+      // Loss Accepted % — Top 25 by Highest LA%
+      const actEsc=actAll.filter(([,d])=>d.esc>0);
+      const top25la=[...actEsc].sort((a,b)=>b[1].laP-a[1].laP).slice(0,25);
+      const laHdr=['#','Client','Del','Esc','Loss','LA%','Loss Value','AOV','CPO'];
+      const laRows=top25la.map(([c,d],i)=>[String(i+1),c,Math.round(d.del).toLocaleString('en-IN'),
+        Math.round(d.esc).toLocaleString('en-IN'),Math.round(d.loss).toLocaleString('en-IN'),
+        d.laP.toFixed(2)+'%','₹'+Math.round(d.lv).toLocaleString('en-IN'),
+        '₹'+d.aov.toFixed(2),'₹'+d.cpo.toFixed(2)]);
+      paginateTable(pptx,'Loss Accepted % — Top 25 Clients by Highest LA%',data.dateStr,laHdr,laRows,25,tenure);
+
+      // AOV & CPO — Top 25 by Highest CPO
+      const actLoss=actAll.filter(([,d])=>d.loss>0);
+      const top25aov=[...actLoss].sort((a,b)=>b[1].cpo-a[1].cpo).slice(0,25);
+      const aovHdr=['#','Client','Del','Loss','Loss Value','AOV','CPO','Esc%','LA%'];
+      const aovRows=top25aov.map(([c,d],i)=>[String(i+1),c,Math.round(d.del).toLocaleString('en-IN'),
+        Math.round(d.loss).toLocaleString('en-IN'),'₹'+Math.round(d.lv).toLocaleString('en-IN'),
+        '₹'+d.aov.toFixed(2),'₹'+d.cpo.toFixed(2),d.escP.toFixed(2)+'%',d.laP.toFixed(2)+'%']);
+      paginateTable(pptx,'AOV & CPO — Top 25 Clients by Highest CPO',data.dateStr,aovHdr,aovRows,25,tenure);
+    }
+
+    // ═══════ SECTION A: LAST 12 WEEKS ═════════════════════════
+    // Overview charts: Del + Esc% + CPO + LA% (bucket-wise, last 12 weeks)
     {
       const s=pptx.addSlide();
-      addSlideHeader(s,pptx,'Last 8 Weeks — Bucket-wise Trends ('+last8w[0].replace('2026-','')+' → '+last8w[last8w.length-1].replace('2026-','')+')',data.dateStr);
-      const lbs=last8w.map(w=>w.replace('2026-',''));
+      addSlideHeader(s,pptx,'Last 12 Weeks — Bucket-wise Trends ('+last12w[0].replace('2026-','')+' → '+last12w[last12w.length-1].replace('2026-','')+')',data.dateStr,tenure);
+      const lbs=last12w.map(w=>w.replace('2026-',''));
       const mkLine=(metric,title,x,y)=>{
         const cd=buckets.map(b=>({name:b.label,labels:lbs,
-          values:b.w8.map(d=>metric==='del'?d.del:metric==='escP'?Number(d.escP.toFixed(2)):metric==='laP'?Number(d.laP.toFixed(2)):Number(d.cpo.toFixed(2)))}));
+          values:b.w12.map(d=>metric==='del'?d.del:metric==='escP'?Number(d.escP.toFixed(2)):metric==='laP'?Number(d.laP.toFixed(2)):Number(d.cpo.toFixed(2)))}));
         s.addChart(pptx.ChartType.line,cd,{
           x,y,w:6.2,h:3.0,showLegend:true,legendPos:'b',legendFontSize:9,
           showTitle:true,title,titleFontSize:11,titleColor:SFX.darkTx,
           lineDataSymbol:'circle',lineDataSymbolSize:5,chartColors:buckets.map(b=>b.color),
           catAxisLabelFontSize:8,valAxisLabelFontSize:8});
       };
-      mkLine('del','Deliveries — Last 8 Weeks',0.4,0.85);
-      mkLine('escP','Esc % — Last 8 Weeks',6.8,0.85);
-      mkLine('cpo','CPO (₹) — Last 8 Weeks',0.4,4.1);
-      mkLine('laP','LA % — Last 8 Weeks',6.8,4.1);
+      mkLine('del','Deliveries — Last 12 Weeks',0.4,0.85);
+      mkLine('escP','Esc % — Last 12 Weeks',6.8,0.85);
+      mkLine('cpo','CPO (₹) — Last 12 Weeks',0.4,4.1);
+      mkLine('laP','LA % — Last 12 Weeks',6.8,4.1);
     }
-    // Weekly table per bucket (last 8 weeks, paginated)
+    // Weekly table per bucket (last 12 weeks, with Del + Esc% in chart)
     buckets.forEach(bkt=>{
       addTimeBasedSection(pptx,{
-        title:'Last 8 Weeks — '+bkt.label,dateStr:data.dateStr,chartType:'combo',
-        cats:bkt.w8.map(d=>d.wk.replace('2026-','')),
+        title:'Last 12 Weeks — '+bkt.label,dateStr:data.dateStr,chartType:'combo',
+        cats:bkt.w12.map(d=>d.wk.replace('2026-','')),
         chartData:[
-          {name:'Deliveries',labels:bkt.w8.map(d=>d.wk.replace('2026-','')),values:bkt.w8.map(d=>d.del)},
-          {name:'Esc%',labels:bkt.w8.map(d=>d.wk.replace('2026-','')),values:bkt.w8.map(d=>Number(d.escP.toFixed(2)))}
+          {name:'Del Count',labels:bkt.w12.map(d=>d.wk.replace('2026-','')),values:bkt.w12.map(d=>d.del)},
+          {name:'Esc %',labels:bkt.w12.map(d=>d.wk.replace('2026-','')),values:bkt.w12.map(d=>Number(d.escP.toFixed(2)))}
         ],color:bkt.color,tableHdr:tH,
-        tableRows:bkt.w8.map(d=>[d.wk.replace('2026-',''),...fR(d)]),rowsPerSlide:12
+        tableRows:bkt.w12.map(d=>[d.wk.replace('2026-',''),...fR(d)]),rowsPerSlide:12,tenure
       });
     });
 
     // ═══════ SECTION B: LAST 2 MONTHS COMPARISON ═════════════
     {
       const s=pptx.addSlide();
-      addSlideHeader(s,pptx,'Last 2 Months Comparison — '+last2m.join(' vs '),data.dateStr);
+      addSlideHeader(s,pptx,'Last 2 Months Comparison — '+last2m.join(' vs '),data.dateStr,tenure);
       const hdr=['Metric',...buckets.map(b=>b.label+' '+last2m[0]),...buckets.map(b=>b.label+' '+last2m[1]),'Overall Δ'];
       const m0=buckets.map(b=>b.m2[0]||{del:0,esc:0,loss:0,lv:0,escP:0,laP:0,cpo:0,aov:0});
       const m1=buckets.map(b=>b.m2[1]||{del:0,esc:0,loss:0,lv:0,escP:0,laP:0,cpo:0,aov:0});
@@ -984,7 +1030,7 @@ async function downloadPpt() {
     // Monthly trend charts (Jan→current)
     {
       const s=pptx.addSlide();
-      addSlideHeader(s,pptx,"Jan'26 → "+curMo+' — Monthly Trends (Bucket-wise)',data.dateStr);
+      addSlideHeader(s,pptx,"Jan'26 → "+curMo+' — Monthly Trends (Bucket-wise)',data.dateStr,tenure);
       const lbs=janToCur;
       const mkLine=(metric,title,x,y)=>{
         const cd=buckets.map(b=>({name:b.label,labels:lbs,
@@ -1000,23 +1046,23 @@ async function downloadPpt() {
       mkLine('cpo','CPO ₹ (MoM)',0.4,4.1);
       mkLine('laP','LA % (MoM)',6.8,4.1);
     }
-    // Monthly table per bucket
+    // Monthly table per bucket (Jan→Current, Del Count + Esc% combo chart)
     buckets.forEach(bkt=>{
       addTimeBasedSection(pptx,{
-        title:"Jan→"+curMo+' Monthly — '+bkt.label,dateStr:data.dateStr,chartType:'combo',
+        title:"Jan'26→"+curMo+' Monthly — '+bkt.label,dateStr:data.dateStr,chartType:'combo',
         cats:bkt.mAll.map(d=>d.mo),
         chartData:[
-          {name:'Deliveries',labels:bkt.mAll.map(d=>d.mo),values:bkt.mAll.map(d=>d.del)},
-          {name:'Esc%',labels:bkt.mAll.map(d=>d.mo),values:bkt.mAll.map(d=>Number(d.escP.toFixed(2)))}
+          {name:'Del Count',labels:bkt.mAll.map(d=>d.mo),values:bkt.mAll.map(d=>d.del)},
+          {name:'Esc %',labels:bkt.mAll.map(d=>d.mo),values:bkt.mAll.map(d=>Number(d.escP.toFixed(2)))}
         ],color:bkt.color,tableHdr:tH,
-        tableRows:bkt.mAll.map(d=>[d.mo,...fR(d)]),rowsPerSlide:12
+        tableRows:bkt.mAll.map(d=>[d.mo,...fR(d)]),rowsPerSlide:12,tenure
       });
     });
 
     // ═══════ SECTION D: QUARTERLY COMPARISON ═════════════════
     {
       const s=pptx.addSlide();
-      addSlideHeader(s,pptx,'Quarterly Comparison — Bucket-wise',data.dateStr);
+      addSlideHeader(s,pptx,'Quarterly Comparison — Bucket-wise',data.dateStr,tenure);
       const qLbs=buckets[0].qtr.map(q=>q.lbl);
       const mkBar=(metric,title,x,y)=>{
         const cd=buckets.map(b=>({name:b.label,labels:qLbs,
@@ -1042,7 +1088,7 @@ async function downloadPpt() {
           {name:'Deliveries',labels:bkt.qtr.map(d=>d.lbl),values:bkt.qtr.map(d=>d.del)},
           {name:'Esc%',labels:bkt.qtr.map(d=>d.lbl),values:bkt.qtr.map(d=>Number(d.escP.toFixed(2)))}
         ],color:bkt.color,tableHdr:tH,
-        tableRows:bkt.qtr.map(d=>[d.lbl,...fR(d)]),rowsPerSlide:12
+        tableRows:bkt.qtr.map(d=>[d.lbl,...fR(d)]),rowsPerSlide:12,tenure
       });
     });
 
@@ -1107,27 +1153,33 @@ async function downloadPpt() {
       }
     });
 
-    // ═══════ INSIGHTS — All Buckets + Non-Meesho Client-wise ══
+    // ═══════ INSIGHTS — Why Esc% & CPO changed (Client-wise) ══
+    // Slide 1: Bucket-level summary + top movers
     {
       const s=pptx.addSlide();
-      addSlideHeader(s,pptx,'Key Insights — Bucket & Client-wise',data.dateStr);
+      addSlideHeader(s,pptx,'Key Insights — Why Esc% & CPO Changed',data.dateStr,tenure);
       const bl=[];
       buckets.forEach(b=>{
-        const lm=b.mAll[b.mAll.length-1], pm=b.mAll[b.mAll.length-2];
+        const bm=b.mAll;
+        const lm=bm[bm.length-1], pm=bm[bm.length-2];
         if(!lm)return;
         bl.push({text:b.label.toUpperCase(),options:{fontSize:13,bold:true,color:b.color,paraSpaceAfter:3,breakLine:true}});
         if(pm){
           const eU=lm.escP>pm.escP;
-          bl.push({text:`Esc% ${eU?'↑ increased':'↓ decreased'} to ${lm.escP.toFixed(2)}% from ${pm.escP.toFixed(2)}% in ${pm.mo} (Δ ${(lm.escP-pm.escP).toFixed(2)}%)`,
+          bl.push({text:`Esc% ${eU?'↑ increased':'↓ decreased'} to ${lm.escP.toFixed(2)}% from ${pm.escP.toFixed(2)}% (${pm.mo} → ${lm.mo}, Δ ${(lm.escP-pm.escP>=0?'+':'')+(lm.escP-pm.escP).toFixed(2)}%)`,
             options:{bullet:{code:'25CF'},fontSize:10,color:eU?'DC2626':'16A34A',paraSpaceAfter:2,breakLine:true}});
-          bl.push({text:`LA% ${lm.laP>pm.laP?'↑':'↓'} ${lm.laP.toFixed(2)}% · CPO ₹${lm.cpo.toFixed(2)} · AOV ₹${lm.aov.toFixed(2)} · Loss ₹${Math.round(lm.lv).toLocaleString('en-IN')}`,
+          const cU=lm.cpo>pm.cpo;
+          bl.push({text:`CPO ${cU?'↑ increased':'↓ decreased'} to ₹${lm.cpo.toFixed(2)} from ₹${pm.cpo.toFixed(2)} (Δ ${(lm.cpo-pm.cpo>=0?'+':'')+'₹'+(lm.cpo-pm.cpo).toFixed(2)})`,
+            options:{bullet:{code:'25CF'},fontSize:10,color:cU?'DC2626':'16A34A',paraSpaceAfter:2,breakLine:true}});
+          bl.push({text:`LA% ${lm.laP>pm.laP?'↑':'↓'} ${lm.laP.toFixed(2)}% · AOV ₹${lm.aov.toFixed(2)} · Loss ₹${Math.round(lm.lv).toLocaleString('en-IN')}`,
             options:{bullet:{code:'25CF'},fontSize:10,color:SFX.darkTx,paraSpaceAfter:2,breakLine:true}});
         }
+        // Top volume + highest esc + highest cpo
         const bca=clientAggW(b.clients,allWeeks);
-        const topV=Object.entries(bca).sort((a,b2)=>b2[1].del-a[1].del)[0];
-        const hEsc=Object.entries(bca).filter(([,d])=>d.del>0).sort((a,b2)=>b2[1].escP-a[1].escP)[0];
-        const hCpo=Object.entries(bca).filter(([,d])=>d.del>0).sort((a,b2)=>b2[1].cpo-a[1].cpo)[0];
-        if(topV) bl.push({text:`Top volume: ${topV[0]} — ${Math.round(topV[1].del).toLocaleString('en-IN')} del · Esc ${topV[1].escP.toFixed(2)}%`,
+        const topV=Object.entries(bca).sort((a,c2)=>c2[1].del-a[1].del)[0];
+        const hEsc=Object.entries(bca).filter(([,d])=>d.del>0).sort((a,c2)=>c2[1].escP-a[1].escP)[0];
+        const hCpo=Object.entries(bca).filter(([,d])=>d.del>0).sort((a,c2)=>c2[1].cpo-a[1].cpo)[0];
+        if(topV) bl.push({text:`Top volume: ${topV[0]} (${Math.round(topV[1].del).toLocaleString('en-IN')} del, ${topV[1].escP.toFixed(2)}% Esc, ₹${topV[1].cpo.toFixed(2)} CPO)`,
           options:{bullet:{code:'25CF'},fontSize:10,color:SFX.darkTx,paraSpaceAfter:2,breakLine:true}});
         if(hEsc&&hEsc[0]!==topV?.[0]) bl.push({text:`Highest Esc%: ${hEsc[0]} at ${hEsc[1].escP.toFixed(2)}%`,
           options:{bullet:{code:'25CF'},fontSize:10,color:'DC2626',paraSpaceAfter:2,breakLine:true}});
@@ -1137,6 +1189,104 @@ async function downloadPpt() {
       });
       s.addText(bl,{x:0.5,y:0.85,w:12.3,h:6.3,fontFace:'Calibri',valign:'top'});
     }
+
+    // Slide 2+: Per-bucket client-level MoM Esc% & CPO change analysis
+    // Shows which clients caused Esc% / CPO to go up, with delta and contribution
+    buckets.forEach(bkt=>{
+      const bm = bkt.mAll;
+      if(bm.length < 2) return;
+      const lastMo = DB.mom.months.find(x=>x.mo===bm[bm.length-1].mo);
+      const prevMo = DB.mom.months.find(x=>x.mo===bm[bm.length-2].mo);
+      if(!lastMo || !prevMo) return;
+      const lastLabel = bm[bm.length-1].mo;
+      const prevLabel = bm[bm.length-2].mo;
+
+      // Build per-client MoM comparison for this bucket
+      const clientDeltas = bkt.clients.map(c => {
+        const cur = lastMo.clients[c] || {del:0,esc:0,loss:0,lv:0};
+        const prv = prevMo.clients[c] || {del:0,esc:0,loss:0,lv:0};
+        const curEscP = cur.del>0 ? cur.esc/cur.del*100 : 0;
+        const prvEscP = prv.del>0 ? prv.esc/prv.del*100 : 0;
+        const curCpo  = cur.del>0 ? cur.lv/cur.del : 0;
+        const prvCpo  = prv.del>0 ? prv.lv/prv.del : 0;
+        return {
+          name:c,
+          curDel:cur.del, prvDel:prv.del,
+          curEscP, prvEscP, escDelta: curEscP - prvEscP,
+          curCpo, prvCpo, cpoDelta: curCpo - prvCpo,
+          curLv:cur.lv, prvLv:prv.lv, lvDelta: cur.lv - prv.lv
+        };
+      }).filter(d => d.curDel > 0 || d.prvDel > 0);
+
+      // Clients where Esc% increased (sorted by biggest increase)
+      const escUp = clientDeltas.filter(d=>d.escDelta > 0.01).sort((a,b)=>b.escDelta-a.escDelta).slice(0,10);
+      // Clients where CPO increased
+      const cpoUp = clientDeltas.filter(d=>d.cpoDelta > 0.01).sort((a,b)=>b.cpoDelta-a.cpoDelta).slice(0,10);
+      // Clients where Esc% decreased (top improvers)
+      const escDn = clientDeltas.filter(d=>d.escDelta < -0.01).sort((a,b)=>a.escDelta-b.escDelta).slice(0,5);
+
+      const s = pptx.addSlide();
+      addSlideHeader(s,pptx,'Why Esc% & CPO Changed — '+bkt.label+' ('+prevLabel+' → '+lastLabel+')',data.dateStr,tenure);
+
+      // Left side: Esc% increase drivers
+      const escHdr = ['Client',prevLabel+' Esc%',lastLabel+' Esc%','Δ Esc%',lastLabel+' Del'];
+      const escRows = escUp.map(d => [
+        d.name,
+        d.prvEscP.toFixed(2)+'%',
+        d.curEscP.toFixed(2)+'%',
+        '+'+d.escDelta.toFixed(2)+'%',
+        Math.round(d.curDel).toLocaleString('en-IN')
+      ]);
+      if(escRows.length > 0) {
+        s.addText('Clients where Esc% INCREASED ↑',{x:0.4,y:0.85,w:6,h:0.3,fontFace:'Calibri',fontSize:12,bold:true,color:'DC2626'});
+        addSfxTable(s,escHdr,escRows,{x:0.4,y:1.2,w:6.2,fontSize:9,rowH:0.24});
+      } else {
+        s.addText('No clients with Esc% increase in '+lastLabel,{x:0.4,y:0.85,w:6,h:0.3,fontFace:'Calibri',fontSize:12,color:'16A34A'});
+      }
+
+      // Right side: CPO increase drivers
+      const cpoHdr = ['Client',prevLabel+' CPO',lastLabel+' CPO','Δ CPO',lastLabel+' LossVal'];
+      const cpoRows = cpoUp.map(d => [
+        d.name,
+        '₹'+d.prvCpo.toFixed(2),
+        '₹'+d.curCpo.toFixed(2),
+        '+₹'+d.cpoDelta.toFixed(2),
+        '₹'+Math.round(d.curLv).toLocaleString('en-IN')
+      ]);
+      if(cpoRows.length > 0) {
+        s.addText('Clients where CPO INCREASED ↑',{x:6.8,y:0.85,w:6,h:0.3,fontFace:'Calibri',fontSize:12,bold:true,color:'7C3AED'});
+        addSfxTable(s,cpoHdr,cpoRows,{x:6.8,y:1.2,w:6.2,fontSize:9,rowH:0.24});
+      }
+
+      // Bottom: Esc% improvers + summary insight
+      if(escDn.length > 0) {
+        const impText = 'Improved ↓: ' + escDn.map(d=>d.name+' ('+d.escDelta.toFixed(2)+'%)').join(', ');
+        s.addText(impText,{x:0.4,y:5.8,w:12.5,h:0.3,fontFace:'Calibri',fontSize:10,color:'16A34A',italic:true});
+      }
+
+      // Auto-generated summary sentence
+      const totalEscUp = escUp.length;
+      const totalCpoUp = cpoUp.length;
+      const topEscDriver = escUp[0];
+      const topCpoDriver = cpoUp[0];
+      let summary = `${bkt.label}: `;
+      if(totalEscUp > 0) {
+        summary += `${totalEscUp} client${totalEscUp>1?'s':''} drove Esc% up`;
+        if(topEscDriver) summary += ` — biggest: ${topEscDriver.name} (+${topEscDriver.escDelta.toFixed(2)}% to ${topEscDriver.curEscP.toFixed(2)}%)`;
+      } else {
+        summary += 'No client-level Esc% increase';
+      }
+      summary += '. ';
+      if(totalCpoUp > 0) {
+        summary += `${totalCpoUp} client${totalCpoUp>1?'s':''} drove CPO up`;
+        if(topCpoDriver) summary += ` — biggest: ${topCpoDriver.name} (+₹${topCpoDriver.cpoDelta.toFixed(2)} to ₹${topCpoDriver.curCpo.toFixed(2)})`;
+      }
+      s.addText(summary,{x:0.4,y:6.2,w:12.5,h:0.6,fontFace:'Calibri',fontSize:10,color:SFX.darkTx,italic:true});
+      if(escDn.length > 0) {
+        s.addText('Top improvers: '+escDn.slice(0,3).map(d=>d.name).join(', ')+' showed Esc% decline — positive trend.',
+          {x:0.4,y:6.7,w:12.5,h:0.3,fontFace:'Calibri',fontSize:10,color:'16A34A',italic:true});
+      }
+    });
 
     // ═══════ THANK YOU ════════════════════════════════════════
     {
@@ -1152,23 +1302,23 @@ async function downloadPpt() {
 }
 
 // Paginate a table across slides (no chart on top, just full-page table)
-function paginateTable(pptx,title,dateStr,hdr,rows,perPage) {
+function paginateTable(pptx,title,dateStr,hdr,rows,perPage,tenure) {
   const pages=Math.max(1,Math.ceil(rows.length/perPage));
   for(let p=0;p<pages;p++){
     const s=pptx.addSlide();
     const suf=pages>1?' (Part '+(p+1)+'/'+pages+')':'';
-    addSlideHeader(s,pptx,title+suf,dateStr);
+    addSlideHeader(s,pptx,title+suf,dateStr,tenure);
     addSfxTable(s,hdr,rows.slice(p*perPage,(p+1)*perPage),{x:0.3,y:0.85,w:12.7,fontSize:10,rowH:0.27});
   }
 }
 
 // Chart + paginated table (chart on first slide top half, table on bottom/continuation)
 function addTimeBasedSection(pptx,opts) {
-  const {title,dateStr,chartType,cats,chartData,color,tableHdr,tableRows,rowsPerSlide}=opts;
+  const {title,dateStr,chartType,cats,chartData,color,tableHdr,tableRows,rowsPerSlide,tenure}=opts;
   const pages=Math.max(1,Math.ceil(tableRows.length/rowsPerSlide));
   for(let p=0;p<pages;p++){
     const s=pptx.addSlide();
-    addSlideHeader(s,pptx,title+(pages>1?' (Part '+(p+1)+'/'+pages+')':''),dateStr);
+    addSlideHeader(s,pptx,title+(pages>1?' (Part '+(p+1)+'/'+pages+')':''),dateStr,tenure);
     if(p===0){
       if(chartType==='combo'){
         s.addChart(pptx.ChartType.bar,[chartData[0]],{
@@ -1192,12 +1342,13 @@ function addTimeBasedSection(pptx,opts) {
 }
 
 // PPT helper: Shadowfax-style header
-function addSlideHeader(s,pptx,title,dateStr) {
+function addSlideHeader(s,pptx,title,dateStr,tenure) {
   s.background={color:'FFFFFF'};
   s.addShape(pptx.ShapeType.rect,{x:0,y:0,w:13.33,h:0.55,fill:{color:SFX.primary}});
   s.addShape(pptx.ShapeType.rect,{x:0,y:0.55,w:13.33,h:0.06,fill:{color:SFX.accent}});
-  s.addText(title,{x:0.4,y:0.05,w:10.5,h:0.5,fontFace:'Calibri',fontSize:20,bold:true,italic:true,color:'FFFFFF'});
-  s.addText(dateStr,{x:10.9,y:0.13,w:2.2,h:0.35,fontFace:'Calibri',fontSize:10,color:'FFFFFF',align:'right'});
+  s.addText(title,{x:0.4,y:0.05,w:9.0,h:0.5,fontFace:'Calibri',fontSize:18,bold:true,italic:true,color:'FFFFFF'});
+  s.addText(dateStr,{x:10.9,y:0.05,w:2.2,h:0.25,fontFace:'Calibri',fontSize:9,color:'FFFFFF',align:'right'});
+  if(tenure) s.addText(tenure,{x:9.5,y:0.3,w:3.6,h:0.22,fontFace:'Calibri',fontSize:8,color:'F4D03F',align:'right'});
   s.addShape(pptx.ShapeType.rect,{x:0,y:7.25,w:13.33,h:0.25,fill:{color:SFX.primary}});
   s.addText('www.shadowfax.in',{x:0.4,y:7.28,w:3,h:0.2,fontFace:'Calibri',fontSize:9,color:'FFFFFF'});
 }
