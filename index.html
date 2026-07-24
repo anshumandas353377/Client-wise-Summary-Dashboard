@@ -805,558 +805,419 @@ async function downloadPpt() {
   try {
     const data = buildExportData();
     const pptx = new PptxGenJS();
-    pptx.defineLayout({ name:'SFX_LAYOUT', width:13.33, height:7.5 });
-    pptx.layout = 'SFX_LAYOUT';
+    pptx.defineLayout({ name:'SFX', width:13.33, height:7.5 });
+    pptx.layout = 'SFX';
     pptx.author = 'Shadowfax';
     pptx.title  = 'Client Wise Summary Dashboard';
 
-    // Bucket definitions (Meesho & FTPL already excluded upstream)
-    const ajioList     = ['AJIO'];
-    const nonAjioList  = data.clients.filter(c => !ajioList.includes(c));
+    const ajioList    = ['AJIO'];
+    const nonAjioList = data.clients.filter(c => !ajioList.includes(c));
     const buckets = [
-      { key:'all',     label:'Overall (All Clients)', clients: data.clients,  color:'8B5CF6' },
-      { key:'ajio',    label:'AJIO',                   clients: ajioList,     color:'3B82F6' },
-      { key:'nonajio', label:'Non-Meesho Non-AJIO',    clients: nonAjioList,  color:'10B981' }
+      { key:'all',     label:'Overall',              clients: data.clients, color:'8B5CF6' },
+      { key:'ajio',    label:'AJIO',                  clients: ajioList,    color:'3B82F6' },
+      { key:'nonajio', label:'Non-Meesho Non-AJIO',   clients: nonAjioList, color:'10B981' }
     ];
 
-    // Helper: aggregate per-period for a client list
-    function aggForBucket(bucketClients) {
-      const w = weekAgg(DB.wow.weeks, bucketClients);
-      const m = monthAggForClients(DB.meta.months, bucketClients);
-      // Quarter
-      const mMap = {jan:1,feb:1,mar:1,apr:2,may:2,jun:2,jul:3,aug:3,sep:3,oct:4,nov:4,dec:4};
-      const qMap = {};
+    function aggBkt(cls) {
+      const w = weekAgg(DB.wow.weeks, cls);
+      const m = monthAggForClients(DB.meta.months, cls);
+      const mm = {jan:1,feb:1,mar:1,apr:2,may:2,jun:2,jul:3,aug:3,sep:3,oct:4,nov:4,dec:4};
+      const qm = {};
       DB.mom.months.forEach(mo => {
-        const m3 = mo.mo.slice(0,3).toLowerCase();
-        const yr = mo.mo.includes("'") ? "20"+mo.mo.split("'")[1] : ""+new Date().getFullYear();
-        const ql = "Q"+(mMap[m3]||1)+" "+yr;
-        if (!qMap[ql]) qMap[ql] = {lbl:ql, del:0, esc:0, loss:0, lv:0};
-        qMap[ql].del  += bucketClients.reduce((s,c)=>s+(mo.clients[c]?.del||0), 0);
-        qMap[ql].esc  += bucketClients.reduce((s,c)=>s+(mo.clients[c]?.esc||0), 0);
-        qMap[ql].loss += bucketClients.reduce((s,c)=>s+(mo.clients[c]?.loss||0), 0);
-        qMap[ql].lv   += bucketClients.reduce((s,c)=>s+(mo.clients[c]?.lv||0), 0);
+        const m3=mo.mo.slice(0,3).toLowerCase();
+        const yr=mo.mo.includes("'")?'20'+mo.mo.split("'")[1]:''+new Date().getFullYear();
+        const ql='Q'+(mm[m3]||1)+' '+yr;
+        if(!qm[ql])qm[ql]={lbl:ql,del:0,esc:0,loss:0,lv:0};
+        qm[ql].del+=cls.reduce((s,c)=>s+(mo.clients[c]?.del||0),0);
+        qm[ql].esc+=cls.reduce((s,c)=>s+(mo.clients[c]?.esc||0),0);
+        qm[ql].loss+=cls.reduce((s,c)=>s+(mo.clients[c]?.loss||0),0);
+        qm[ql].lv+=cls.reduce((s,c)=>s+(mo.clients[c]?.lv||0),0);
       });
-      const qOrder = ['Q1','Q2','Q3','Q4'];
-      const q = Object.values(qMap).sort((a,b)=>{
-        const [qa,ya]=[a.lbl.split(' ')[0],a.lbl.split(' ')[1]];
-        const [qb,yb]=[b.lbl.split(' ')[0],b.lbl.split(' ')[1]];
-        return ya!==yb ? ya.localeCompare(yb) : qOrder.indexOf(qa)-qOrder.indexOf(qb);
-      }).map(x => ({...x,
-        escP: x.del>0 ? x.esc/x.del*100 : 0,
-        laP:  x.esc>0 ? x.loss/x.esc*100 : 0,
-        cpo:  x.del>0 ? x.lv/x.del : 0,
-        aov:  x.loss>0 ? x.lv/x.loss : 0
-      }));
-      return {w, m, q};
+      const qo=['Q1','Q2','Q3','Q4'];
+      const q=Object.values(qm).sort((a,b)=>{
+        const[qa,ya]=[a.lbl.split(' ')[0],a.lbl.split(' ')[1]];
+        const[qb,yb]=[b.lbl.split(' ')[0],b.lbl.split(' ')[1]];
+        return ya!==yb?ya.localeCompare(yb):qo.indexOf(qa)-qo.indexOf(qb);
+      }).map(x=>({...x,
+        escP:x.del>0?x.esc/x.del*100:0,laP:x.esc>0?x.loss/x.esc*100:0,
+        cpo:x.del>0?x.lv/x.del:0,aov:x.loss>0?x.lv/x.loss:0}));
+      return {w,m,q};
+    }
+    buckets.forEach(b=>{b.agg=aggBkt(b.clients);});
+
+    // Row formatter
+    const fRow = d => [
+      Math.round(d.del).toLocaleString('en-IN'),
+      Math.round(d.esc).toLocaleString('en-IN'),
+      d.escP.toFixed(2)+'%',
+      Math.round(d.loss).toLocaleString('en-IN'),
+      d.laP.toFixed(2)+'%',
+      '₹'+Math.round(d.lv).toLocaleString('en-IN'),
+      '₹'+d.aov.toFixed(2),
+      '₹'+d.cpo.toFixed(2)
+    ];
+    const tHdr = ['Period','Del','Esc','Esc%','Loss','LA%','LossVal','AOV','CPO'];
+
+    // ═══════ SLIDE 1: COVER ═══════════════════════════════════
+    {
+      const s=pptx.addSlide(); s.background={color:'FFFFFF'};
+      s.addShape(pptx.ShapeType.rect,{x:0,y:0,w:0.15,h:7.5,fill:{color:SFX.primary}});
+      s.addText('SHADOWFAX',{x:1.5,y:2.5,w:10,h:0.8,fontFace:'Calibri',fontSize:44,bold:true,color:SFX.primary,align:'center'});
+      s.addText('Think ahead!',{x:1.5,y:3.3,w:10,h:0.5,fontFace:'Calibri',fontSize:20,italic:true,color:SFX.primary,align:'center'});
+      s.addText('Client Wise Summary Dashboard',{x:1.5,y:4.2,w:10,h:0.5,fontFace:'Calibri',fontSize:24,bold:true,color:SFX.darkTx,align:'center'});
+      s.addText(data.dateStr+'  ·  '+data.clients.length+' clients  ·  Meesho & FTPL Excluded',
+        {x:1.5,y:4.8,w:10,h:0.4,fontFace:'Calibri',fontSize:14,color:'666666',align:'center'});
+      s.addText('www.shadowfax.in',{x:0.4,y:7.15,w:3,h:0.3,fontFace:'Calibri',fontSize:9,color:'888888'});
     }
 
-    // Pre-compute all bucket aggregates
-    buckets.forEach(b => { b.agg = aggForBucket(b.clients); });
-
-    // ═══════════════════════════════════════════════════════════
-    // SLIDE 1: COVER
-    // ═══════════════════════════════════════════════════════════
+    // ═══════ SLIDE 2: EXECUTIVE SUMMARY — Bucket Comparison ═══
     {
-      const s = pptx.addSlide();
-      s.background = { color:'FFFFFF' };
-      s.addShape(pptx.ShapeType.rect, { x:0, y:0, w:0.15, h:7.5, fill:{color:SFX.primary} });
-      s.addText('SHADOWFAX', { x:1.5, y:2.6, w:10, h:0.8,
-        fontFace:'Calibri', fontSize:44, bold:true, color:SFX.primary, align:'center' });
-      s.addText('Think ahead!', { x:1.5, y:3.4, w:10, h:0.5,
-        fontFace:'Calibri', fontSize:20, italic:true, color:SFX.primary, align:'center' });
-      s.addText('Client Wise Summary Dashboard', { x:1.5, y:4.3, w:10, h:0.5,
-        fontFace:'Calibri', fontSize:24, bold:true, color:SFX.darkTx, align:'center' });
-      s.addText(data.dateStr + '  ·  ' + data.clients.length + ' clients  ·  Meesho & FTPL Excluded',
-        { x:1.5, y:4.9, w:10, h:0.4, fontFace:'Calibri', fontSize:14, color:'666666', align:'center' });
-      s.addText('www.shadowfax.in', { x:0.4, y:7.15, w:3, h:0.3,
-        fontFace:'Calibri', fontSize:9, color:'888888' });
+      const s=pptx.addSlide();
+      addSlideHeader(s,pptx,'Executive Summary — Bucket Comparison',data.dateStr);
+      const bH=['Metric',...buckets.map(b=>b.label)];
+      const bR=[];
+      const totals=b=>b.agg.w.reduce((a,d)=>({del:a.del+d.del,esc:a.esc+d.esc,loss:a.loss+d.loss,lv:a.lv+d.lv}),{del:0,esc:0,loss:0,lv:0});
+      const ts=buckets.map(b=>totals(b));
+      bR.push(['Total Deliveries',...ts.map(t=>Math.round(t.del).toLocaleString('en-IN'))]);
+      bR.push(['Total Escalations',...ts.map(t=>Math.round(t.esc).toLocaleString('en-IN'))]);
+      bR.push(['Overall Esc %',...ts.map(t=>(t.del>0?(t.esc/t.del*100).toFixed(2):'0.00')+'%')]);
+      bR.push(['Overall LA %',...ts.map(t=>(t.esc>0?(t.loss/t.esc*100).toFixed(2):'0.00')+'%')]);
+      bR.push(['Total Loss Value',...ts.map(t=>'₹'+Math.round(t.lv).toLocaleString('en-IN'))]);
+      bR.push(['Approx CPO',...ts.map(t=>'₹'+(t.del>0?(t.lv/t.del).toFixed(2):'0.00'))]);
+      bR.push(['AOV',...ts.map(t=>'₹'+(t.loss>0?(t.lv/t.loss).toFixed(2):'0.00'))]);
+      bR.push(['Client Count',...buckets.map(b=>String(b.clients.length))]);
+      addSfxTable(s,bH,bR,{x:0.4,y:0.9,w:12.5,fontSize:12,rowH:0.42});
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // SLIDE 2: EXECUTIVE SUMMARY (overall KPIs + bucket comparison)
-    // ═══════════════════════════════════════════════════════════
+    // ═══════ TAB: OVERVIEW — KPI + Trends + Client Summary ════
+    // Slide: Overview KPI Table
     {
-      const s = pptx.addSlide();
-      addSlideHeader(s, pptx, 'Executive Summary — Bucket Comparison', data.dateStr);
-      const lastM = data.mAgg[data.mAgg.length-1];
-      const prevM = data.mAgg[data.mAgg.length-2];
-      // Bucket comparison table
-      const bktHdr = ['Metric', ...buckets.map(b=>b.label)];
-      const bktRows = [
-        ['Total Deliveries',   ...buckets.map(b => Math.round(b.agg.w.reduce((s,d)=>s+d.del,0)).toLocaleString('en-IN'))],
-        ['Total Escalations',  ...buckets.map(b => Math.round(b.agg.w.reduce((s,d)=>s+d.esc,0)).toLocaleString('en-IN'))],
-        ['Overall Esc %',      ...buckets.map(b => {
-          const t = b.agg.w.reduce((a,d)=>({del:a.del+d.del,esc:a.esc+d.esc}),{del:0,esc:0});
-          return (t.del>0 ? (t.esc/t.del*100).toFixed(2) : '0.00')+'%';
-        })],
-        ['Overall LA %',       ...buckets.map(b => {
-          const t = b.agg.w.reduce((a,d)=>({esc:a.esc+d.esc,loss:a.loss+d.loss}),{esc:0,loss:0});
-          return (t.esc>0 ? (t.loss/t.esc*100).toFixed(2) : '0.00')+'%';
-        })],
-        ['Total Loss Value',   ...buckets.map(b => '₹ '+Math.round(b.agg.w.reduce((s,d)=>s+d.lv,0)).toLocaleString('en-IN'))],
-        ['Approx CPO',         ...buckets.map(b => {
-          const t = b.agg.w.reduce((a,d)=>({del:a.del+d.del,lv:a.lv+d.lv}),{del:0,lv:0});
-          return '₹ '+(t.del>0 ? (t.lv/t.del).toFixed(2) : '0.00');
-        })],
-        ['AOV',                ...buckets.map(b => {
-          const t = b.agg.w.reduce((a,d)=>({loss:a.loss+d.loss,lv:a.lv+d.lv}),{loss:0,lv:0});
-          return '₹ '+(t.loss>0 ? (t.lv/t.loss).toFixed(2) : '0.00');
-        })],
-        ['Client Count',       ...buckets.map(b => String(b.clients.length))]
+      const s=pptx.addSlide();
+      addSlideHeader(s,pptx,'Overview — KPI Summary (All Buckets)',data.dateStr);
+      const cats=data.months;
+      const cd=buckets.map(b=>({name:b.label,labels:cats,
+        values:cats.map((_,i)=>b.agg.m[i]?b.agg.m[i].del:0)}));
+      s.addChart(pptx.ChartType.line,cd,{
+        x:0.4,y:0.9,w:6.2,h:3.0,showLegend:true,legendPos:'b',legendFontSize:10,
+        showTitle:true,title:'Delivery Trend (Monthly)',titleFontSize:12,titleColor:SFX.darkTx,
+        lineDataSymbol:'circle',lineDataSymbolSize:6,chartColors:buckets.map(b=>b.color),
+        catAxisLabelFontSize:9,valAxisLabelFontSize:9});
+      const cd2=buckets.map(b=>({name:b.label,labels:cats,
+        values:cats.map((_,i)=>b.agg.m[i]?Number(b.agg.m[i].escP.toFixed(2)):0)}));
+      s.addChart(pptx.ChartType.line,cd2,{
+        x:6.8,y:0.9,w:6.2,h:3.0,showLegend:true,legendPos:'b',legendFontSize:10,
+        showTitle:true,title:'Esc % Trend (Monthly)',titleFontSize:12,titleColor:SFX.darkTx,
+        lineDataSymbol:'circle',lineDataSymbolSize:6,chartColors:buckets.map(b=>b.color),
+        catAxisLabelFontSize:9,valAxisLabelFontSize:9});
+      // CPO + LA% side by side
+      const cd3=buckets.map(b=>({name:b.label,labels:cats,
+        values:cats.map((_,i)=>b.agg.m[i]?Number(b.agg.m[i].cpo.toFixed(2)):0)}));
+      s.addChart(pptx.ChartType.line,cd3,{
+        x:0.4,y:4.1,w:6.2,h:3.0,showLegend:true,legendPos:'b',legendFontSize:10,
+        showTitle:true,title:'CPO Trend (Monthly, ₹)',titleFontSize:12,titleColor:SFX.darkTx,
+        lineDataSymbol:'circle',lineDataSymbolSize:6,chartColors:buckets.map(b=>b.color),
+        catAxisLabelFontSize:9,valAxisLabelFontSize:9});
+      const cd4=buckets.map(b=>({name:b.label,labels:cats,
+        values:cats.map((_,i)=>b.agg.m[i]?Number(b.agg.m[i].laP.toFixed(2)):0)}));
+      s.addChart(pptx.ChartType.line,cd4,{
+        x:6.8,y:4.1,w:6.2,h:3.0,showLegend:true,legendPos:'b',legendFontSize:10,
+        showTitle:true,title:'LA % Trend (Monthly)',titleFontSize:12,titleColor:SFX.darkTx,
+        lineDataSymbol:'circle',lineDataSymbolSize:6,chartColors:buckets.map(b=>b.color),
+        catAxisLabelFontSize:9,valAxisLabelFontSize:9});
+    }
+    // Overview Client Summary — paginated
+    {
+      const hdr=['Client','Del','Esc','Esc%','Loss','LA%','LossVal','AOV','CPO'];
+      const rows=data.clientRows.map(c=>[c.name,...fRow(c)]);
+      paginateTable(pptx,'Overview — Client Summary',data.dateStr,hdr,rows,20);
+    }
+
+    // ═══════ TAB: ESCALATION % ════════════════════════════════
+    // Slide: Esc% bucket-wise charts
+    {
+      const s=pptx.addSlide();
+      addSlideHeader(s,pptx,'Escalation % — Bucket-wise Trend',data.dateStr);
+      const cats=data.months;
+      // Combo: Del bars + Esc% line per bucket
+      buckets.forEach((b,bi)=>{
+        const xOff=0.4+bi*4.2;
+        const escD=[{name:'Del',labels:cats,values:cats.map((_,i)=>b.agg.m[i]?b.agg.m[i].del:0)}];
+        s.addChart(pptx.ChartType.bar,escD,{
+          x:xOff,y:0.9,w:4.0,h:2.8,barDir:'col',showLegend:false,
+          chartColors:[b.color+'88'],catAxisLabelFontSize:8,valAxisLabelFontSize:8,
+          showTitle:true,title:b.label+' Del',titleFontSize:10,titleColor:SFX.darkTx});
+        const escP=[{name:'Esc%',labels:cats,values:cats.map((_,i)=>b.agg.m[i]?Number(b.agg.m[i].escP.toFixed(2)):0)}];
+        s.addChart(pptx.ChartType.line,escP,{
+          x:xOff,y:3.9,w:4.0,h:2.8,showLegend:false,
+          chartColors:[b.color],lineDataSymbol:'circle',lineDataSymbolSize:6,
+          catAxisLabelFontSize:8,valAxisLabelFontSize:8,
+          showTitle:true,title:b.label+' Esc%',titleFontSize:10,titleColor:SFX.darkTx});
+      });
+    }
+    // Esc% — KPI buckets + top 8 clients
+    {
+      const s=pptx.addSlide();
+      addSlideHeader(s,pptx,'Escalation % — Client Breakdown & KPI Buckets',data.dateStr);
+      const ca=clientAgg(data.clients,DB.wow.weeks);
+      const active=Object.entries(ca).filter(([,d])=>d.del>0);
+      const kpis=[
+        ['>5% High',String(active.filter(([,d])=>d.escP>=5).length),'F8D7DA'],
+        ['2-5% Watch',String(active.filter(([,d])=>d.escP>=2&&d.escP<5).length),'FDE68A'],
+        ['1-2% OK',String(active.filter(([,d])=>d.escP>=1&&d.escP<2).length),'BFDBFE'],
+        ['<1% Good',String(active.filter(([,d])=>d.del>0&&d.escP<1).length),'D5E8D8']
       ];
-      addSfxTable(s, bktHdr, bktRows, {x:0.4, y:0.9, w:12.5, fontSize:12, rowH:0.42});
-
-      // Auto-generated insight bullets on right
-      const insights = [];
-      const overallLast = lastM;
-      const overallPrev = prevM;
-      if (overallLast && overallPrev) {
-        const escDir = overallLast.escP > overallPrev.escP ? 'increased' : 'decreased';
-        const escColor = overallLast.escP > overallPrev.escP ? SFX.redFlag : '';
-        insights.push(`Overall Esc% ${escDir} to ${overallLast.escP.toFixed(2)}% in ${overallLast.mo} from ${overallPrev.escP.toFixed(2)}% in ${overallPrev.mo}`);
-        const laDir = overallLast.laP > overallPrev.laP ? 'improved' : 'declined';
-        insights.push(`Overall LA% ${laDir} to ${overallLast.laP.toFixed(2)}% (was ${overallPrev.laP.toFixed(2)}%)`);
-      }
-      // Bucket-specific insights
-      buckets.forEach(b => {
-        if (b.key === 'all' || b.clients.length === 0) return;
-        const bm = b.agg.m;
-        const bl = bm[bm.length-1], bp = bm[bm.length-2];
-        if (!bl) return;
-        insights.push(`${b.label}: latest month Esc ${bl.escP.toFixed(2)}%${bp ? ' (Δ '+(bl.escP-bp.escP >= 0 ? '+':'')+(bl.escP-bp.escP).toFixed(2)+'%)':''} · CPO ₹${bl.cpo.toFixed(2)}`);
+      kpis.forEach((k,i)=>{
+        s.addShape(pptx.ShapeType.roundRect,{x:0.4+i*3.15,y:0.85,w:2.9,h:0.9,fill:{color:k[2]},rectRadius:0.1});
+        s.addText(k[0],{x:0.5+i*3.15,y:0.88,w:2.7,h:0.35,fontFace:'Calibri',fontSize:11,color:SFX.darkTx});
+        s.addText(k[1]+' clients',{x:0.5+i*3.15,y:1.2,w:2.7,h:0.4,fontFace:'Calibri',fontSize:18,bold:true,color:SFX.darkTx});
       });
+      // Top 8 clients Esc% bar
+      const top8=[...active].sort((a,b)=>b[1].escP-a[1].escP).slice(0,8);
+      const cd=[{name:'Esc%',labels:top8.map(([c])=>c),values:top8.map(([,d])=>Number(d.escP.toFixed(2)))}];
+      s.addChart(pptx.ChartType.bar,cd,{
+        x:0.4,y:2.0,w:12.5,h:4.8,barDir:'bar',showLegend:false,
+        chartColors:[SFX.primary],catAxisLabelFontSize:10,valAxisLabelFontSize:10,
+        showTitle:true,title:'Top 8 Clients by Esc%',titleFontSize:12,titleColor:SFX.darkTx,
+        showValue:true,dataLabelFontSize:9,dataLabelColor:SFX.darkTx});
+    }
+    // Esc% client-wise WoW table — paginated
+    {
+      const ca=clientAgg(data.clients,DB.wow.weeks);
+      const active=Object.entries(ca).filter(([,d])=>d.del>0).sort((a,b)=>b[1].del-a[1].del);
+      const hdr=['Client','Del','Esc','Esc%'];
+      const rows=active.map(([c,d])=>[c,Math.round(d.del).toLocaleString('en-IN'),
+        Math.round(d.esc).toLocaleString('en-IN'),d.escP.toFixed(2)+'%']);
+      paginateTable(pptx,'Escalation % — Client-wise Detail',data.dateStr,hdr,rows,22);
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // SLIDE 3: DELIVERY & ESCALATION TRENDS — Bucket-wise Charts
-    // ═══════════════════════════════════════════════════════════
+    // ═══════ TAB: LOSS ACCEPTED % ════════════════════════════
     {
-      const s = pptx.addSlide();
-      addSlideHeader(s, pptx, 'Delivery Trend — Bucket-wise (Monthly)', data.dateStr);
-      const cats = data.months;
-      const chartData = buckets.map(b => ({
-        name: b.label,
-        labels: cats,
-        values: cats.map(mo => {
-          const m = DB.mom.months.find(x=>x.mo===mo);
-          if (!m) return 0;
-          return b.clients.reduce((s,c)=>s+(m.clients[c]?.del||0), 0);
-        })
-      }));
-      s.addChart(pptx.ChartType.line, chartData, {
-        x:0.4, y:0.9, w:12.5, h:5.9,
-        showLegend:true, legendPos:'b', legendFontSize:12,
-        catAxisLabelFontSize:11, valAxisLabelFontSize:11,
-        showTitle:true, title:'Deliveries per Month by Bucket',
-        titleFontSize:14, titleColor:SFX.darkTx,
-        lineDataSymbol:'circle', lineDataSymbolSize:8,
-        showValue:false,
-        chartColors:buckets.map(b=>b.color)
-      });
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // SLIDE 4: ESCALATION % TREND — Bucket-wise line chart
-    // ═══════════════════════════════════════════════════════════
-    {
-      const s = pptx.addSlide();
-      addSlideHeader(s, pptx, 'Escalation % Trend — Bucket-wise (Monthly)', data.dateStr);
-      const cats = data.months;
-      const chartData = buckets.map(b => ({
-        name: b.label,
-        labels: cats,
-        values: cats.map((_,i) => {
-          const bm = b.agg.m[i];
-          return bm ? Number(bm.escP.toFixed(2)) : 0;
-        })
-      }));
-      s.addChart(pptx.ChartType.line, chartData, {
-        x:0.4, y:0.9, w:12.5, h:5.9,
-        showLegend:true, legendPos:'b', legendFontSize:12,
-        showTitle:true, title:'Escalation % by Bucket (MoM)',
-        titleFontSize:14, titleColor:SFX.darkTx,
-        lineDataSymbol:'circle', lineDataSymbolSize:8,
-        chartColors:buckets.map(b=>b.color),
-        valAxisTitle:'Escalation %', valAxisTitleFontSize:11
-      });
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // SLIDE 5: LA % TREND — Bucket-wise
-    // ═══════════════════════════════════════════════════════════
-    {
-      const s = pptx.addSlide();
-      addSlideHeader(s, pptx, 'Loss Accepted % Trend — Bucket-wise (Monthly)', data.dateStr);
-      const cats = data.months;
-      const chartData = buckets.map(b => ({
-        name: b.label,
-        labels: cats,
-        values: cats.map((_,i) => {
-          const bm = b.agg.m[i];
-          return bm ? Number(bm.laP.toFixed(2)) : 0;
-        })
-      }));
-      s.addChart(pptx.ChartType.line, chartData, {
-        x:0.4, y:0.9, w:12.5, h:5.9,
-        showLegend:true, legendPos:'b', legendFontSize:12,
-        showTitle:true, title:'Loss Accepted % by Bucket (MoM)',
-        titleFontSize:14, titleColor:SFX.darkTx,
-        lineDataSymbol:'circle', lineDataSymbolSize:8,
-        chartColors:buckets.map(b=>b.color),
-        valAxisTitle:'LA %', valAxisTitleFontSize:11
-      });
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // SLIDE 6: CPO & AOV TREND — Bucket-wise
-    // ═══════════════════════════════════════════════════════════
-    {
-      const s = pptx.addSlide();
-      addSlideHeader(s, pptx, 'Approx CPO Trend — Bucket-wise (Monthly)', data.dateStr);
-      const cats = data.months;
-      const chartData = buckets.map(b => ({
-        name: b.label,
-        labels: cats,
-        values: cats.map((_,i) => {
-          const bm = b.agg.m[i];
-          return bm ? Number(bm.cpo.toFixed(2)) : 0;
-        })
-      }));
-      s.addChart(pptx.ChartType.line, chartData, {
-        x:0.4, y:0.9, w:12.5, h:5.9,
-        showLegend:true, legendPos:'b', legendFontSize:12,
-        showTitle:true, title:'Approx CPO by Bucket (₹, MoM)',
-        titleFontSize:14, titleColor:SFX.darkTx,
-        lineDataSymbol:'circle', lineDataSymbolSize:8,
-        chartColors:buckets.map(b=>b.color),
-        valAxisTitle:'CPO (₹)', valAxisTitleFontSize:11
-      });
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // SLIDES 7+: WEEKLY, MONTHLY, QUARTERLY SUMMARIES (per bucket)
-    // Each has: chart on top-half + table on bottom-half
-    // If table too long → paginate across multiple slides
-    // ═══════════════════════════════════════════════════════════
-
-    // Weekly summary per bucket
-    buckets.forEach(bkt => {
-      addTimeBasedSection(pptx, {
-        title:  'Weekly Trend — ' + bkt.label,
-        dateStr: data.dateStr,
-        chartType: 'combo',
-        cats: bkt.agg.w.map(d=>d.wk.replace('2026-','')),
-        chartData: [
-          { name:'Deliveries', labels: bkt.agg.w.map(d=>d.wk.replace('2026-','')), values: bkt.agg.w.map(d=>d.del) },
-          { name:'Esc %',      labels: bkt.agg.w.map(d=>d.wk.replace('2026-','')), values: bkt.agg.w.map(d=>Number(d.escP.toFixed(2))) }
-        ],
-        color: bkt.color,
-        tableHdr: ['Week','Del','Esc','Esc %','Loss','LA %','Loss Value','AOV','CPO'],
-        tableRows: bkt.agg.w.map(d => [
-          d.wk.replace('2026-',''),
-          Math.round(d.del).toLocaleString('en-IN'),
-          Math.round(d.esc).toLocaleString('en-IN'),
-          d.escP.toFixed(2)+'%',
-          Math.round(d.loss).toLocaleString('en-IN'),
-          d.laP.toFixed(2)+'%',
-          '₹ '+Math.round(d.lv).toLocaleString('en-IN'),
-          '₹ '+d.aov.toFixed(2),
-          '₹ '+d.cpo.toFixed(2)
-        ]),
-        rowsPerSlide: 12
-      });
-    });
-
-    // Monthly summary per bucket (all months fit; no pagination needed usually)
-    buckets.forEach(bkt => {
-      addTimeBasedSection(pptx, {
-        title:  'Monthly Trend — ' + bkt.label,
-        dateStr: data.dateStr,
-        chartType: 'combo',
-        cats: bkt.agg.m.map(d=>d.mo),
-        chartData: [
-          { name:'Deliveries', labels: bkt.agg.m.map(d=>d.mo), values: bkt.agg.m.map(d=>d.del) },
-          { name:'Esc %',      labels: bkt.agg.m.map(d=>d.mo), values: bkt.agg.m.map(d=>Number(d.escP.toFixed(2))) }
-        ],
-        color: bkt.color,
-        tableHdr: ['Month','Del','Esc','Esc %','Loss','LA %','Loss Value','AOV','CPO'],
-        tableRows: bkt.agg.m.map(d => [
-          d.mo,
-          Math.round(d.del).toLocaleString('en-IN'),
-          Math.round(d.esc).toLocaleString('en-IN'),
-          d.escP.toFixed(2)+'%',
-          Math.round(d.loss).toLocaleString('en-IN'),
-          d.laP.toFixed(2)+'%',
-          '₹ '+Math.round(d.lv).toLocaleString('en-IN'),
-          '₹ '+d.aov.toFixed(2),
-          '₹ '+d.cpo.toFixed(2)
-        ]),
-        rowsPerSlide: 12
-      });
-    });
-
-    // Quarterly summary per bucket
-    buckets.forEach(bkt => {
-      if (bkt.agg.q.length === 0) return;
-      addTimeBasedSection(pptx, {
-        title:  'Quarterly Trend — ' + bkt.label,
-        dateStr: data.dateStr,
-        chartType: 'bar',
-        cats: bkt.agg.q.map(d=>d.lbl),
-        chartData: [
-          { name:'Deliveries', labels: bkt.agg.q.map(d=>d.lbl), values: bkt.agg.q.map(d=>d.del) },
-          { name:'Esc %',      labels: bkt.agg.q.map(d=>d.lbl), values: bkt.agg.q.map(d=>Number(d.escP.toFixed(2))) }
-        ],
-        color: bkt.color,
-        tableHdr: ['Quarter','Del','Esc','Esc %','Loss','LA %','Loss Value','AOV','CPO'],
-        tableRows: bkt.agg.q.map(d => [
-          d.lbl,
-          Math.round(d.del).toLocaleString('en-IN'),
-          Math.round(d.esc).toLocaleString('en-IN'),
-          d.escP.toFixed(2)+'%',
-          Math.round(d.loss).toLocaleString('en-IN'),
-          d.laP.toFixed(2)+'%',
-          '₹ '+Math.round(d.lv).toLocaleString('en-IN'),
-          '₹ '+d.aov.toFixed(2),
-          '₹ '+d.cpo.toFixed(2)
-        ]),
-        rowsPerSlide: 12
-      });
-    });
-
-    // ═══════════════════════════════════════════════════════════
-    // CLIENT-WISE ANALYSIS — Top 10 client breakdown (chart + table)
-    // Paginated if > 20 clients
-    // ═══════════════════════════════════════════════════════════
-    {
-      // Top 10 clients by delivery — bar chart of Esc% + Del
-      const top10 = data.clientRows.slice(0, 10);
-      const s = pptx.addSlide();
-      addSlideHeader(s, pptx, 'Top 10 Clients — Esc % & Delivery Volume', data.dateStr);
-      const chartData = [
-        { name:'Deliveries', labels: top10.map(c=>c.name), values: top10.map(c=>c.del) },
-        { name:'Esc %',      labels: top10.map(c=>c.name), values: top10.map(c=>Number(c.escP.toFixed(2))) }
+      const s=pptx.addSlide();
+      addSlideHeader(s,pptx,'Loss Accepted % — Bucket-wise Trend + Top 20',data.dateStr);
+      const cats=data.months;
+      const cd=buckets.map(b=>({name:b.label,labels:cats,
+        values:cats.map((_,i)=>b.agg.m[i]?Number(b.agg.m[i].laP.toFixed(2)):0)}));
+      s.addChart(pptx.ChartType.line,cd,{
+        x:0.4,y:0.9,w:6.2,h:3.0,showLegend:true,legendPos:'b',legendFontSize:10,
+        showTitle:true,title:'LA % Trend by Bucket',titleFontSize:12,titleColor:SFX.darkTx,
+        lineDataSymbol:'circle',lineDataSymbolSize:6,chartColors:buckets.map(b=>b.color),
+        catAxisLabelFontSize:9,valAxisLabelFontSize:9});
+      // Top 20 LA% horizontal bar
+      const ca=clientAgg(data.clients,DB.wow.weeks);
+      const top20=[...Object.entries(ca)].filter(([,d])=>d.esc>0).sort((a,b)=>b[1].laP-a[1].laP).slice(0,20);
+      const cd2=[{name:'LA%',labels:top20.map(([c])=>c.slice(0,18)),values:top20.map(([,d])=>Number(d.laP.toFixed(1)))}];
+      s.addChart(pptx.ChartType.bar,cd2,{
+        x:6.8,y:0.9,w:6.2,h:3.0,barDir:'bar',showLegend:false,
+        chartColors:[SFX.primary],catAxisLabelFontSize:8,
+        showTitle:true,title:'Top 20 by LA%',titleFontSize:11,titleColor:SFX.darkTx});
+      // KPI buckets
+      const kpis=[
+        ['>70% Excellent',Object.values(ca).filter(d=>d.esc>0&&d.laP>=70).length,'D5E8D8'],
+        ['40-70% Good',Object.values(ca).filter(d=>d.laP>=40&&d.laP<70).length,'BFDBFE'],
+        ['20-40% Watch',Object.values(ca).filter(d=>d.laP>=20&&d.laP<40).length,'FDE68A'],
+        ['<20% Low',Object.values(ca).filter(d=>d.esc>0&&d.laP<20).length,'F8D7DA']
       ];
-      s.addChart(pptx.ChartType.bar, chartData, {
-        x:0.4, y:0.9, w:12.5, h:5.9,
-        barDir:'col', barGrouping:'clustered',
-        showLegend:true, legendPos:'b', legendFontSize:11,
-        showTitle:true, title:'Top 10 Clients by Deliveries with Esc %',
-        titleFontSize:14, titleColor:SFX.darkTx,
-        chartColors:[SFX.primary, 'EF4444'],
-        catAxisLabelRotate:-30, catAxisLabelFontSize:10
+      kpis.forEach((k,i)=>{
+        s.addShape(pptx.ShapeType.roundRect,{x:0.4+i*3.15,y:4.2,w:2.9,h:0.7,fill:{color:k[2]},rectRadius:0.1});
+        s.addText(k[0]+': '+k[1]+' clients',{x:0.5+i*3.15,y:4.25,w:2.7,h:0.6,fontFace:'Calibri',fontSize:13,bold:true,color:SFX.darkTx});
       });
+      // LA client table paginated
+      const active=[...Object.entries(ca)].filter(([,d])=>d.esc>0).sort((a,b)=>b[1].del-a[1].del);
+      const rows=active.map(([c,d])=>[c,Math.round(d.del).toLocaleString('en-IN'),
+        Math.round(d.esc).toLocaleString('en-IN'),Math.round(d.loss).toLocaleString('en-IN'),d.laP.toFixed(2)+'%']);
+      if(rows.length>0) paginateTable(pptx,'Loss Accepted % — Client-wise Detail',data.dateStr,
+        ['Client','Del','Esc','Loss','LA%'],rows,22);
     }
 
-    // Full client list — paginated table with 20 rows per slide
-    const clientHdr = ['Client', 'Del', 'Esc', 'Esc %', 'Loss', 'LA %', 'Loss Value', 'AOV', 'CPO'];
-    const clientAllRows = data.clientRows.map(c => [
-      c.name,
-      Math.round(c.del).toLocaleString('en-IN'),
-      Math.round(c.esc).toLocaleString('en-IN'),
-      c.escP.toFixed(2)+'%',
-      Math.round(c.loss).toLocaleString('en-IN'),
-      c.laP.toFixed(2)+'%',
-      '₹ '+Math.round(c.lv).toLocaleString('en-IN'),
-      c.aov > 0 ? '₹ '+c.aov.toFixed(2) : '—',
-      c.cpo > 0 ? '₹ '+c.cpo.toFixed(2) : '—'
-    ]);
-    const perSlide = 20;
-    const totalPages = Math.ceil(clientAllRows.length / perSlide);
-    for (let p=0; p<totalPages; p++) {
-      const s = pptx.addSlide();
-      const title = 'Client-wise Summary (Part ' + (p+1) + ' of ' + totalPages + ')  ·  ranked by Deliveries';
-      addSlideHeader(s, pptx, title, data.dateStr);
-      const rows = clientAllRows.slice(p*perSlide, (p+1)*perSlide);
-      addSfxTable(s, clientHdr, rows, {x:0.3, y:0.9, w:12.7, fontSize:10, rowH:0.28});
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // INSIGHTS SLIDE — Bucket-wise + Client-wise commentary
-    // ═══════════════════════════════════════════════════════════
+    // ═══════ TAB: AOV & CPO ══════════════════════════════════
     {
-      const s = pptx.addSlide();
-      addSlideHeader(s, pptx, 'Key Insights — Bucket & Client-wise', data.dateStr);
+      const s=pptx.addSlide();
+      addSlideHeader(s,pptx,'AOV & CPO — Bucket-wise Trends + Top Clients',data.dateStr);
+      const cats=data.months;
+      // AOV trend
+      const cdA=buckets.map(b=>({name:b.label,labels:cats,
+        values:cats.map((_,i)=>b.agg.m[i]?Number(b.agg.m[i].aov.toFixed(2)):0)}));
+      s.addChart(pptx.ChartType.line,cdA,{
+        x:0.4,y:0.9,w:6.2,h:2.8,showLegend:true,legendPos:'b',legendFontSize:10,
+        showTitle:true,title:'AOV Trend by Bucket (₹)',titleFontSize:12,titleColor:SFX.darkTx,
+        lineDataSymbol:'circle',lineDataSymbolSize:6,chartColors:buckets.map(b=>b.color),
+        catAxisLabelFontSize:9,valAxisLabelFontSize:9});
+      // CPO trend
+      const cdC=buckets.map(b=>({name:b.label,labels:cats,
+        values:cats.map((_,i)=>b.agg.m[i]?Number(b.agg.m[i].cpo.toFixed(2)):0)}));
+      s.addChart(pptx.ChartType.line,cdC,{
+        x:6.8,y:0.9,w:6.2,h:2.8,showLegend:true,legendPos:'b',legendFontSize:10,
+        showTitle:true,title:'CPO Trend by Bucket (₹)',titleFontSize:12,titleColor:SFX.darkTx,
+        lineDataSymbol:'circle',lineDataSymbolSize:6,chartColors:buckets.map(b=>b.color),
+        catAxisLabelFontSize:9,valAxisLabelFontSize:9});
+      // Top 20 AOV + CPO bar charts
+      const ca=clientAgg(data.clients,DB.wow.weeks);
+      const wd=Object.entries(ca).filter(([,d])=>d.loss>0&&d.del>0);
+      const topAov=[...wd].sort((a,b)=>b[1].aov-a[1].aov).slice(0,15);
+      const topCpo=[...wd].sort((a,b)=>b[1].cpo-a[1].cpo).slice(0,15);
+      s.addChart(pptx.ChartType.bar,[{name:'AOV',labels:topAov.map(([c])=>c.slice(0,16)),
+        values:topAov.map(([,d])=>Number(d.aov.toFixed(2)))}],{
+        x:0.4,y:3.9,w:6.2,h:3.2,barDir:'bar',showLegend:false,chartColors:['F59E0B'],
+        catAxisLabelFontSize:8,showTitle:true,title:'Top 15 by AOV',titleFontSize:11,titleColor:SFX.darkTx});
+      s.addChart(pptx.ChartType.bar,[{name:'CPO',labels:topCpo.map(([c])=>c.slice(0,16)),
+        values:topCpo.map(([,d])=>Number(d.cpo.toFixed(2)))}],{
+        x:6.8,y:3.9,w:6.2,h:3.2,barDir:'bar',showLegend:false,chartColors:['8B5CF6'],
+        catAxisLabelFontSize:8,showTitle:true,title:'Top 15 by CPO',titleFontSize:11,titleColor:SFX.darkTx});
+    }
+    // AOV & CPO client table paginated
+    {
+      const ca=clientAgg(data.clients,DB.wow.weeks);
+      const wd=Object.entries(ca).filter(([,d])=>d.loss>0&&d.del>0).sort((a,b)=>b[1].del-a[1].del);
+      const rows=wd.map(([c,d])=>[c,Math.round(d.del).toLocaleString('en-IN'),
+        Math.round(d.loss).toLocaleString('en-IN'),'₹'+Math.round(d.lv).toLocaleString('en-IN'),
+        '₹'+d.aov.toFixed(2),'₹'+d.cpo.toFixed(2),d.escP.toFixed(2)+'%',d.laP.toFixed(2)+'%']);
+      paginateTable(pptx,'AOV & CPO — Client-wise Detail',data.dateStr,
+        ['Client','Del','Loss','LossVal','AOV','CPO','Esc%','LA%'],rows,22);
+    }
 
-      const bulletsRoot = [];
-      buckets.forEach(b => {
-        const bm = b.agg.m;
-        const lastM = bm[bm.length-1], prevM = bm[bm.length-2];
-        if (!lastM) return;
-        // Section header for bucket
-        bulletsRoot.push({ text: b.label.toUpperCase(),
-          options:{ fontSize:15, bold:true, color:b.color, paraSpaceAfter:6, breakLine:true }});
-        if (prevM) {
-          const escDir = lastM.escP > prevM.escP ? 'increased ↑' : 'decreased ↓';
-          const escFlag = lastM.escP > prevM.escP;
-          bulletsRoot.push({ text:
-            `Esc% ${escDir} to ${lastM.escP.toFixed(2)}% in ${lastM.mo} from ${prevM.escP.toFixed(2)}% in ${prevM.mo} (Δ ${(lastM.escP-prevM.escP).toFixed(2)}%)`,
-            options:{ bullet:{code:'25CF'}, fontSize:11, color: escFlag ? 'DC2626' : '16A34A', paraSpaceAfter:3, breakLine:true }});
-          const laDir = lastM.laP > prevM.laP ? 'improved ↑' : 'declined ↓';
-          bulletsRoot.push({ text:
-            `LA% ${laDir} to ${lastM.laP.toFixed(2)}% (was ${prevM.laP.toFixed(2)}%)`,
-            options:{ bullet:{code:'25CF'}, fontSize:11, color: SFX.darkTx, paraSpaceAfter:3, breakLine:true }});
-          bulletsRoot.push({ text:
-            `CPO ₹${lastM.cpo.toFixed(2)} · AOV ₹${lastM.aov.toFixed(2)} · Loss Value ₹${Math.round(lastM.lv).toLocaleString('en-IN')}`,
-            options:{ bullet:{code:'25CF'}, fontSize:11, color: SFX.darkTx, paraSpaceAfter:8, breakLine:true }});
-        }
-        // Top client in this bucket
-        const bkt_ca = clientAgg(b.clients, DB.wow.weeks);
-        const topInBucket = Object.entries(bkt_ca).sort((a,b2)=>b2[1].del - a[1].del)[0];
-        const highEscInBucket = Object.entries(bkt_ca).filter(([,d])=>d.del>0).sort((a,b2)=>b2[1].escP - a[1].escP)[0];
-        if (topInBucket) {
-          bulletsRoot.push({ text:
-            `Top volume: ${topInBucket[0]} — ${Math.round(topInBucket[1].del).toLocaleString('en-IN')} del · Esc ${topInBucket[1].escP.toFixed(2)}% · LA ${topInBucket[1].laP.toFixed(2)}%`,
-            options:{ bullet:{code:'25CF'}, fontSize:11, color: SFX.darkTx, paraSpaceAfter:3, breakLine:true }});
-        }
-        if (highEscInBucket && highEscInBucket[0] !== topInBucket?.[0]) {
-          bulletsRoot.push({ text:
-            `Highest Esc%: ${highEscInBucket[0]} at ${highEscInBucket[1].escP.toFixed(2)}%`,
-            options:{ bullet:{code:'25CF'}, fontSize:11, color: 'DC2626', paraSpaceAfter:12, breakLine:true }});
-        } else {
-          bulletsRoot.push({ text:'', options:{fontSize:6, paraSpaceAfter:8, breakLine:true} });
-        }
+    // ═══════ TAB: TREND VIEW — W/M/Q per bucket ═════════════
+    // Weekly per bucket (chart + paginated table)
+    buckets.forEach(bkt=>{
+      addTimeBasedSection(pptx,{
+        title:'Weekly Trend — '+bkt.label,dateStr:data.dateStr,chartType:'combo',
+        cats:bkt.agg.w.map(d=>d.wk.replace('2026-','')),
+        chartData:[
+          {name:'Deliveries',labels:bkt.agg.w.map(d=>d.wk.replace('2026-','')),values:bkt.agg.w.map(d=>d.del)},
+          {name:'Esc%',labels:bkt.agg.w.map(d=>d.wk.replace('2026-','')),values:bkt.agg.w.map(d=>Number(d.escP.toFixed(2)))}
+        ],color:bkt.color,tableHdr:tHdr,
+        tableRows:bkt.agg.w.map(d=>[d.wk.replace('2026-',''),...fRow(d)]),rowsPerSlide:12
       });
+    });
+    // Monthly per bucket
+    buckets.forEach(bkt=>{
+      addTimeBasedSection(pptx,{
+        title:'Monthly Trend — '+bkt.label,dateStr:data.dateStr,chartType:'combo',
+        cats:bkt.agg.m.map(d=>d.mo),
+        chartData:[
+          {name:'Deliveries',labels:bkt.agg.m.map(d=>d.mo),values:bkt.agg.m.map(d=>d.del)},
+          {name:'Esc%',labels:bkt.agg.m.map(d=>d.mo),values:bkt.agg.m.map(d=>Number(d.escP.toFixed(2)))}
+        ],color:bkt.color,tableHdr:tHdr,
+        tableRows:bkt.agg.m.map(d=>[d.mo,...fRow(d)]),rowsPerSlide:12
+      });
+    });
+    // Quarterly per bucket
+    buckets.forEach(bkt=>{
+      if(!bkt.agg.q.length) return;
+      addTimeBasedSection(pptx,{
+        title:'Quarterly Trend — '+bkt.label,dateStr:data.dateStr,chartType:'bar',
+        cats:bkt.agg.q.map(d=>d.lbl),
+        chartData:[
+          {name:'Deliveries',labels:bkt.agg.q.map(d=>d.lbl),values:bkt.agg.q.map(d=>d.del)},
+          {name:'Esc%',labels:bkt.agg.q.map(d=>d.lbl),values:bkt.agg.q.map(d=>Number(d.escP.toFixed(2)))}
+        ],color:bkt.color,tableHdr:tHdr,
+        tableRows:bkt.agg.q.map(d=>[d.lbl,...fRow(d)]),rowsPerSlide:12
+      });
+    });
 
-      s.addText(bulletsRoot, { x:0.5, y:0.85, w:12.3, h:6.3, fontFace:'Calibri', valign:'top' });
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // FINAL: THANK YOU
-    // ═══════════════════════════════════════════════════════════
+    // ═══════ INSIGHTS — Bucket & Client-wise ═════════════════
     {
-      const s = pptx.addSlide();
-      s.background = { color:'FFFFFF' };
-      s.addShape(pptx.ShapeType.rect, { x:0, y:0, w:0.15, h:7.5, fill:{color:SFX.primary} });
-      s.addText('Thank You', { x:1.5, y:3.0, w:10, h:1.2,
-        fontFace:'Calibri', fontSize:60, bold:true, color:SFX.darkTx, align:'center' });
-      s.addText('www.shadowfax.in', { x:0.4, y:7.15, w:3, h:0.3,
-        fontFace:'Calibri', fontSize:9, color:'888888' });
+      const s=pptx.addSlide();
+      addSlideHeader(s,pptx,'Key Insights — Bucket & Client-wise',data.dateStr);
+      const bl=[];
+      buckets.forEach(b=>{
+        const bm=b.agg.m;
+        const lm=bm[bm.length-1],pm=bm[bm.length-2];
+        if(!lm)return;
+        bl.push({text:b.label.toUpperCase(),options:{fontSize:14,bold:true,color:b.color,paraSpaceAfter:4,breakLine:true}});
+        if(pm){
+          const eU=lm.escP>pm.escP;
+          bl.push({text:`Esc% ${eU?'increased ↑':'decreased ↓'} to ${lm.escP.toFixed(2)}% from ${pm.escP.toFixed(2)}% (Δ ${(lm.escP-pm.escP).toFixed(2)}%)`,
+            options:{bullet:{code:'25CF'},fontSize:11,color:eU?'DC2626':'16A34A',paraSpaceAfter:2,breakLine:true}});
+          bl.push({text:`LA% ${lm.laP>pm.laP?'improved ↑':'declined ↓'} to ${lm.laP.toFixed(2)}% · CPO ₹${lm.cpo.toFixed(2)} · AOV ₹${lm.aov.toFixed(2)}`,
+            options:{bullet:{code:'25CF'},fontSize:11,color:SFX.darkTx,paraSpaceAfter:2,breakLine:true}});
+        }
+        const bca=clientAgg(b.clients,DB.wow.weeks);
+        const top=Object.entries(bca).sort((a,b2)=>b2[1].del-a[1].del)[0];
+        const hesc=Object.entries(bca).filter(([,d])=>d.del>0).sort((a,b2)=>b2[1].escP-a[1].escP)[0];
+        if(top) bl.push({text:`Top vol: ${top[0]} — ${Math.round(top[1].del).toLocaleString('en-IN')} del · ${top[1].escP.toFixed(2)}% Esc · ${top[1].laP.toFixed(2)}% LA`,
+          options:{bullet:{code:'25CF'},fontSize:11,color:SFX.darkTx,paraSpaceAfter:2,breakLine:true}});
+        if(hesc&&hesc[0]!==top?.[0]) bl.push({text:`Highest Esc%: ${hesc[0]} at ${hesc[1].escP.toFixed(2)}%`,
+          options:{bullet:{code:'25CF'},fontSize:11,color:'DC2626',paraSpaceAfter:8,breakLine:true}});
+        else bl.push({text:'',options:{fontSize:4,paraSpaceAfter:6,breakLine:true}});
+      });
+      s.addText(bl,{x:0.5,y:0.85,w:12.3,h:6.3,fontFace:'Calibri',valign:'top'});
     }
 
-    await pptx.writeFile({ fileName: 'ClientWise_Dashboard_' + data.dateStr.replace(/[, ]/g,'_') + '.pptx' });
-  } catch (e) {
-    console.error('[PPT]', e);
-    alert('PPT failed: ' + e.message);
-  } finally {
-    btn.innerHTML = orig; btn.disabled = false;
+    // ═══════ THANK YOU ════════════════════════════════════════
+    {
+      const s=pptx.addSlide(); s.background={color:'FFFFFF'};
+      s.addShape(pptx.ShapeType.rect,{x:0,y:0,w:0.15,h:7.5,fill:{color:SFX.primary}});
+      s.addText('Thank You',{x:1.5,y:3.0,w:10,h:1.2,fontFace:'Calibri',fontSize:60,bold:true,color:SFX.darkTx,align:'center'});
+      s.addText('www.shadowfax.in',{x:0.4,y:7.15,w:3,h:0.3,fontFace:'Calibri',fontSize:9,color:'888888'});
+    }
+
+    await pptx.writeFile({fileName:'ClientWise_Dashboard_'+data.dateStr.replace(/[, ]/g,'_')+'.pptx'});
+  } catch(e){ console.error('[PPT]',e); alert('PPT failed: '+e.message); }
+  finally { btn.innerHTML=orig; btn.disabled=false; }
+}
+
+// Paginate a table across slides (no chart on top, just full-page table)
+function paginateTable(pptx,title,dateStr,hdr,rows,perPage) {
+  const pages=Math.max(1,Math.ceil(rows.length/perPage));
+  for(let p=0;p<pages;p++){
+    const s=pptx.addSlide();
+    const suf=pages>1?' (Part '+(p+1)+'/'+pages+')':'';
+    addSlideHeader(s,pptx,title+suf,dateStr);
+    addSfxTable(s,hdr,rows.slice(p*perPage,(p+1)*perPage),{x:0.3,y:0.85,w:12.7,fontSize:10,rowH:0.27});
   }
 }
 
-// ── Helper: add a slide with chart on top + table below, paginated if table long
-function addTimeBasedSection(pptx, opts) {
-  const { title, dateStr, chartType, cats, chartData, color, tableHdr, tableRows, rowsPerSlide } = opts;
-  const totalRows = tableRows.length;
-  const pages = Math.max(1, Math.ceil(totalRows / rowsPerSlide));
-
-  for (let p=0; p<pages; p++) {
-    const s = pptx.addSlide();
-    const partSuffix = pages > 1 ? ` (Part ${p+1} of ${pages})` : '';
-    addSlideHeader(s, pptx, title + partSuffix, dateStr);
-
-    // Chart on top half (only on first page — table gets more room on continuation pages)
-    if (p === 0) {
-      // For combo, we render a line chart with 2 series (Del count + Esc%)
-      // pptxgenjs doesn't natively support dual-axis, so we use bar + line as separate series
-      if (chartType === 'combo') {
-        s.addChart(pptx.ChartType.bar, [chartData[0]], {
-          x:0.4, y:0.85, w:12.5, h:2.9,
-          barDir:'col', showLegend:true, legendPos:'b', legendFontSize:10,
-          showTitle:true, title: chartData[0].name + ' & ' + chartData[1].name,
-          titleFontSize:12, titleColor:SFX.darkTx,
-          chartColors:[color],
-          catAxisLabelFontSize:9,
-          // Secondary axis for Esc%
-          valAxes: [
-            { showValAxisTitle:true, valAxisTitle: chartData[0].name, valAxisTitleFontSize:9 },
-            { showValAxisTitle:true, valAxisTitle: chartData[1].name, valAxisTitleFontSize:9,
-              valGridLine:{ style:'none' }, valAxisOrientation:'maxMin' }
-          ],
-          catAxes: [{ catAxisLabelFontSize:9 }, { catAxisHidden:true }]
-        });
-        // Add second series as line overlay
-        s.addChart(pptx.ChartType.line, [chartData[1]], {
-          x:0.4, y:0.85, w:12.5, h:2.9,
-          showLegend:false,
-          chartColors:['EF4444'],
-          lineDataSymbol:'circle', lineDataSymbolSize:6,
-          catAxisHidden:true, valAxisHidden:true,
-          plotArea:{ fill:{type:'none'} }
-        });
-      } else if (chartType === 'bar') {
-        s.addChart(pptx.ChartType.bar, chartData, {
-          x:0.4, y:0.85, w:12.5, h:2.9,
-          barDir:'col', barGrouping:'clustered',
-          showLegend:true, legendPos:'b', legendFontSize:10,
-          chartColors:[color, 'EF4444'],
-          catAxisLabelFontSize:9
-        });
+// Chart + paginated table (chart on first slide top half, table on bottom/continuation)
+function addTimeBasedSection(pptx,opts) {
+  const {title,dateStr,chartType,cats,chartData,color,tableHdr,tableRows,rowsPerSlide}=opts;
+  const pages=Math.max(1,Math.ceil(tableRows.length/rowsPerSlide));
+  for(let p=0;p<pages;p++){
+    const s=pptx.addSlide();
+    addSlideHeader(s,pptx,title+(pages>1?' (Part '+(p+1)+'/'+pages+')':''),dateStr);
+    if(p===0){
+      if(chartType==='combo'){
+        s.addChart(pptx.ChartType.bar,[chartData[0]],{
+          x:0.4,y:0.85,w:12.5,h:2.9,barDir:'col',showLegend:true,legendPos:'b',legendFontSize:10,
+          chartColors:[color],catAxisLabelFontSize:9,
+          showTitle:true,title:chartData[0].name+' & '+chartData[1].name,titleFontSize:12,titleColor:SFX.darkTx});
+      } else if(chartType==='bar'){
+        s.addChart(pptx.ChartType.bar,chartData,{
+          x:0.4,y:0.85,w:12.5,h:2.9,barDir:'col',barGrouping:'clustered',
+          showLegend:true,legendPos:'b',legendFontSize:10,
+          chartColors:[color,'EF4444'],catAxisLabelFontSize:9});
       } else {
-        s.addChart(pptx.ChartType.line, chartData, {
-          x:0.4, y:0.85, w:12.5, h:2.9,
-          showLegend:true, legendPos:'b', legendFontSize:10,
-          chartColors:[color, 'EF4444'],
-          lineDataSymbol:'circle', lineDataSymbolSize:6,
-          catAxisLabelFontSize:9
-        });
+        s.addChart(pptx.ChartType.line,chartData,{
+          x:0.4,y:0.85,w:12.5,h:2.9,showLegend:true,legendPos:'b',legendFontSize:10,
+          chartColors:[color,'EF4444'],lineDataSymbol:'circle',lineDataSymbolSize:6,catAxisLabelFontSize:9});
       }
     }
-
-    // Table on bottom half (or full page for continuation)
-    const pageRows = tableRows.slice(p*rowsPerSlide, (p+1)*rowsPerSlide);
-    const tableY = p === 0 ? 4.0 : 0.85;
-    const rowH   = p === 0 ? 0.24 : 0.28;
-    addSfxTable(s, tableHdr, pageRows, { x:0.4, y:tableY, w:12.5, fontSize:10, rowH });
+    const pr=tableRows.slice(p*rowsPerSlide,(p+1)*rowsPerSlide);
+    addSfxTable(s,tableHdr,pr,{x:0.4,y:p===0?4.0:0.85,w:12.5,fontSize:10,rowH:p===0?0.24:0.28});
   }
 }
 
-// PPT helper: draw Shadowfax-style header on a slide
-function addSlideHeader(s, pptx, title, dateStr) {
-  s.background = { color:'FFFFFF' };
-  // Green title bar
-  s.addShape(pptx.ShapeType.rect, { x:0, y:0, w:13.33, h:0.55, fill:{color:SFX.primary} });
-  // Yellow accent line
-  s.addShape(pptx.ShapeType.rect, { x:0, y:0.55, w:13.33, h:0.06, fill:{color:SFX.accent} });
-  s.addText(title, { x:0.4, y:0.05, w:10.5, h:0.5,
-    fontFace:'Calibri', fontSize:20, bold:true, italic:true, color:'FFFFFF' });
-  s.addText(dateStr, { x:10.9, y:0.13, w:2.2, h:0.35,
-    fontFace:'Calibri', fontSize:10, color:'FFFFFF', align:'right' });
-  // Footer
-  s.addShape(pptx.ShapeType.rect, { x:0, y:7.25, w:13.33, h:0.25, fill:{color:SFX.primary} });
-  s.addText('www.shadowfax.in', { x:0.4, y:7.28, w:3, h:0.2,
-    fontFace:'Calibri', fontSize:9, color:'FFFFFF' });
+// PPT helper: Shadowfax-style header
+function addSlideHeader(s,pptx,title,dateStr) {
+  s.background={color:'FFFFFF'};
+  s.addShape(pptx.ShapeType.rect,{x:0,y:0,w:13.33,h:0.55,fill:{color:SFX.primary}});
+  s.addShape(pptx.ShapeType.rect,{x:0,y:0.55,w:13.33,h:0.06,fill:{color:SFX.accent}});
+  s.addText(title,{x:0.4,y:0.05,w:10.5,h:0.5,fontFace:'Calibri',fontSize:20,bold:true,italic:true,color:'FFFFFF'});
+  s.addText(dateStr,{x:10.9,y:0.13,w:2.2,h:0.35,fontFace:'Calibri',fontSize:10,color:'FFFFFF',align:'right'});
+  s.addShape(pptx.ShapeType.rect,{x:0,y:7.25,w:13.33,h:0.25,fill:{color:SFX.primary}});
+  s.addText('www.shadowfax.in',{x:0.4,y:7.28,w:3,h:0.2,fontFace:'Calibri',fontSize:9,color:'FFFFFF'});
 }
 
-// PPT helper: draw a Shadowfax-styled table
-function addSfxTable(s, headers, rows, opts) {
-  const fontSize = opts.fontSize || 11;
-  const rowH = opts.rowH || 0.32;
-  const table = [];
-  // Header row
-  table.push(headers.map(h => ({
-    text: h,
-    options: {
-      bold: true, fontSize: fontSize+1, color: 'FFFFFF', fill: {color:SFX.primary},
-      align:'center', valign:'middle', fontFace:'Calibri'
-    }
-  })));
-  // Data rows (alternating fill)
-  rows.forEach((row, ri) => {
-    table.push(row.map((cell, ci) => ({
-      text: String(cell),
-      options: {
-        fontSize, color:SFX.darkTx,
-        fill: {color: ri%2===0 ? 'FFFFFF' : SFX.tableAlt},
-        align: ci===0 ? 'left' : 'center',
-        valign:'middle', fontFace:'Calibri', bold: ci===0
-      }
-    })));
+// PPT helper: Shadowfax-styled table
+function addSfxTable(s,headers,rows,opts) {
+  const fs=opts.fontSize||11,rh=opts.rowH||0.32,table=[];
+  table.push(headers.map(h=>({text:h,options:{bold:true,fontSize:fs+1,color:'FFFFFF',fill:{color:SFX.primary},
+    align:'center',valign:'middle',fontFace:'Calibri'}})));
+  rows.forEach((row,ri)=>{
+    table.push(row.map((cell,ci)=>({text:String(cell),options:{
+      fontSize:fs,color:SFX.darkTx,fill:{color:ri%2===0?'FFFFFF':SFX.tableAlt},
+      align:ci===0?'left':'center',valign:'middle',fontFace:'Calibri',bold:ci===0}})));
   });
-  s.addTable(table, {
-    x: opts.x, y: opts.y, w: opts.w,
-    border: { pt:0.5, color:'CCCCCC' },
-    rowH
-  });
+  s.addTable(table,{x:opts.x,y:opts.y,w:opts.w,border:{pt:0.5,color:'CCCCCC'},rowH:rh});
 }
 
 
