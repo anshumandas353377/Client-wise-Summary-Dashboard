@@ -816,12 +816,12 @@ async function downloadPpt() {
     const last2m    = allMonths.slice(-2);
     const janToCur  = allMonths; // Jan'26 onwards (already starts from Jan)
     const curMo     = allMonths[allMonths.length-1] || '';
-    const tenure    = "Jan'26 → " + curMo + ' · ' + allClients.length + ' clients · ' + data.dateStr;
 
     // Buckets
     const ajioList    = ['AJIO'];
     const allClients  = data.clients;
     const nonAjioList = allClients.filter(c => !ajioList.includes(c));
+    const tenure      = "Jan'26 → " + curMo + ' · ' + allClients.length + ' clients · ' + data.dateStr;
     const buckets = [
       { key:'all',     label:'Overall',              clients:allClients,   color:'8B5CF6' },
       { key:'ajio',    label:'AJIO',                  clients:ajioList,    color:'3B82F6' },
