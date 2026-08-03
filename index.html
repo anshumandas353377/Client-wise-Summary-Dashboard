@@ -569,8 +569,13 @@ async function apiFetch(action) {
 // ── LOAD ──────────────────────────────────────────────────────
 async function loadData(retry) {
   retry = retry || 0;
-  const msgs = ['⏳ Loading from Google Sheets…','⏳ Reading Base sheet — first load can take 20–30s…','⏳ Almost there…'];
-  document.getElementById('s-ov').innerHTML = `<div class="loader"><div class="spinner"></div>${msgs[Math.min(retry,2)]}</div>`;
+  const msgs = [
+    '⏳ Loading from Google Sheets…',
+    '⏳ Reading Base sheet — first load can take 20–40s…',
+    '⏳ Still working — Apps Script cold start, almost there…',
+    '⏳ Final attempt — this can take up to a minute on first load…'
+  ];
+  document.getElementById('s-ov').innerHTML = `<div class="loader"><div class="spinner"></div>${msgs[Math.min(retry,3)]}</div>`;
   document.getElementById('dataSubtitle').textContent = 'Loading…';
   try {
     const p = await apiFetch('all');
@@ -589,9 +594,14 @@ async function loadData(retry) {
     logPageView(); // non-blocking — log this session view
   } catch(e) {
     console.error('[dash] loadData fail attempt', retry+1, e);
-    if (e.message.includes('504') && retry < 1) {
-      document.getElementById('s-ov').innerHTML = '<div class="loader"><div class="spinner"></div>⏳ Timed out — retrying (cache warm-up)…</div>';
-      await new Promise(r => setTimeout(r,4000));
+    // Retry up to 3 times on timeout/network errors, with increasing backoff
+    const isRetryable = e.message.includes('504') || e.message.includes('timed out') ||
+                         e.message.includes('Network error') || e.message.includes('Failed to fetch');
+    if (isRetryable && retry < 3) {
+      const delay = [3000, 5000, 8000][retry] || 8000;
+      document.getElementById('s-ov').innerHTML =
+        `<div class="loader"><div class="spinner"></div>⏳ Timed out — retrying in ${delay/1000}s (attempt ${retry+2}/4)…</div>`;
+      await new Promise(r => setTimeout(r, delay));
       return loadData(retry+1);
     }
     showError(e.message);
@@ -601,10 +611,15 @@ async function refreshData() { DB = null; await loadData(); }
 function showError(msg) {
   document.getElementById('s-ov').innerHTML = `<div class="err-box">
     <strong>⚠ Could not load data</strong><br>${msg}<br><br>
+    <button class="act-btn" onclick="loadData()" style="margin-bottom:10px">⟳ Retry Now</button><br>
     <strong>Debug:</strong><br>
     <a href="/api/data?action=debug" target="_blank">/api/data?action=debug</a> — sheet diagnostics<br>
     <a href="/api/data?action=all"   target="_blank">/api/data?action=all</a>   — full raw JSON<br><br>
-    If 504: run <code>warmCache()</code> in Apps Script editor first, then reload.</div>`;
+    <strong>If this keeps happening:</strong><br>
+    1. Open the Apps Script editor for this sheet<br>
+    2. Run the <code>warmCache()</code> function once manually (Run ▶ button)<br>
+    3. Then click "Retry Now" above — the cache will now be warm<br><br>
+    <strong>Permanent fix:</strong> run <code>installWarmCacheTrigger()</code> once in the Apps Script editor — this keeps the cache warm automatically every 4 minutes so this timeout won't recur.</div>`;
 }
 
 // ── DOWNLOAD MENU ─────────────────────────────────────────────
