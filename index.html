@@ -271,6 +271,7 @@ tr:last-child td{border-bottom:none;}
   </div>
 </div>
 <div class="tabs">
+  <button class="tab"    onclick="sw('top20',this)">🏆 Top 20 Clients</button>
   <button class="tab on" onclick="sw('ov',this)">📋 Overview</button>
   <button class="tab"    onclick="sw('esc',this)">⚠️ Escalation %</button>
   <button class="tab"    onclick="sw('la',this)">✅ Loss Accepted %</button>
@@ -279,6 +280,7 @@ tr:last-child td{border-bottom:none;}
   <button class="tab"    onclick="sw('viewers',this)">👁 View History</button>
 </div>
 <div class="body">
+  <div id="s-top20"   class="sec"></div>
   <div id="s-ov"      class="sec on"><div class="loader"><div class="spinner"></div>Loading…</div></div>
   <div id="s-esc"     class="sec"></div>
   <div id="s-la"      class="sec"></div>
@@ -289,6 +291,7 @@ tr:last-child td{border-bottom:none;}
 <script>
 // ── STATE ─────────────────────────────────────────────────────
 let DB = null, TAB = 'ov', BKT = 'all', CH = {};
+let OV_TOP20 = false; // Overview Client Summary: show only top 20 by Deliveries
 // Per-table sort state — key = table id, value = {col, dir}
 const SORTS = {};
 function getSort(tid, defCol='del', defDir='desc') {
@@ -1241,6 +1244,10 @@ function setBkt(b, btn) {
   document.querySelectorAll('.bkt').forEach(x=>x.classList.remove('on')); btn.classList.add('on');
   SEL_CLIENTS = []; updateClientBtnLabel(); renderClientList(); go();
 }
+function toggleOvTop20() {
+  OV_TOP20 = !OV_TOP20;
+  go();
+}
 
 // ── MULTI-SELECT PANEL ────────────────────────────────────────
 function toggleMsel(key) {
@@ -1766,6 +1773,7 @@ function sw(t,btn){
 }
 function go(){
   if(!DB)return;
+  if(TAB==='top20') renderTop20();
   if(TAB==='ov')    renderOv();
   if(TAB==='esc')   renderEsc();
   if(TAB==='la')    renderLA();
@@ -1792,77 +1800,19 @@ function getClientPeriodData(c, periodAgg){
 }
 
 // ════════ OVERVIEW ════════
-function renderOv(){
-  const clients=filteredClients();
-  // Period-aware aggregation
-  const isMonth = PERIOD==='month';
-  const pAgg    = getPeriodAgg(clients);
-  const lbs     = pAgg.map(d=>d.lbl||d.wk?.replace('2026-','')||d.mo||'');
-  const weeks   = getWeeks(); // still needed for weekly-del columns in table
-
-  const tD=pAgg.reduce((s,d)=>s+d.del,0), tE=pAgg.reduce((s,d)=>s+d.esc,0);
-  const tL=pAgg.reduce((s,d)=>s+d.loss,0), tV=pAgg.reduce((s,d)=>s+d.lv,0);
-  const eP=tD>0?tE/tD*100:0, lP=tE>0?tL/tE*100:0, cpo=tD>0?tV/tD:0, aov=tL>0?tV/tL:0;
-
-  // Client agg over the selected period
-  const ca = isMonth
-    ? (() => {
-        const months=getMonths(), out={};
-        clients.forEach(c=>{
-          let del=0,esc=0,loss=0,lv=0;
-          months.forEach(mo=>{const m=DB.mom.months.find(x=>x.mo===mo);const d=m?.clients[c];if(d){del+=d.del;esc+=d.esc;loss+=d.loss;lv+=d.lv;}});
-          out[c]={del,esc,loss,lv,escP:del>0?esc/del*100:0,laP:esc>0?loss/esc*100:0,cpo:del>0?lv/del:0,aov:loss>0?lv/loss:0};
-        });
-        return out;
-      })()
-    : clientAgg(clients, weeks);
-
-  const sorted=doSort(Object.entries(ca),'ov');
-  const mx=Math.max(...Object.values(ca).map(d=>d.del),1);
-
-  // MoM data for table columns
-  const allMo=DB.meta.months;
-  const clientMoAgg={};
-  clients.forEach(c=>{
-    clientMoAgg[c]=allMo.map(mo=>{
-      const m=DB.mom.months.find(x=>x.mo===mo);
-      const d=m?.clients[c];
-      if(!d)return{mo,escP:0,laP:0};
-      return{mo,escP:d.del>0?d.esc/d.del*100:0,laP:d.esc>0?d.loss/d.esc*100:0};
-    });
-  });
-
-  const periodLabel = isMonth ? 'Month' : 'Week';
-
-  let h=`<div class="krow">
-    <div class="kpi k-blue"   style="animation-delay:.0s"><div class="lb">Total Deliveries</div><div class="vl">${f(tD,'n')}</div><div class="sb">${clients.length} clients · ${pAgg.length} ${periodLabel.toLowerCase()}s</div></div>
-    <div class="kpi k-red"    style="animation-delay:.05s"><div class="lb">Overall Esc %</div><div class="vl">${f(eP,'p')}</div><div class="sb">${f(tE,'n')} escalations</div></div>
-    <div class="kpi k-green"  style="animation-delay:.1s"><div class="lb">Overall LA %</div><div class="vl">${f(lP,'p')}</div><div class="sb">${f(tL,'n')} accepted</div></div>
-    <div class="kpi k-amber"  style="animation-delay:.15s"><div class="lb">AOV</div><div class="vl">${f(aov,'cpo')}</div><div class="sb">Loss Amt ÷ Loss Count</div></div>
-    <div class="kpi k-purple" style="animation-delay:.2s"><div class="lb">Approx CPO</div><div class="vl">${f(cpo,'cpo')}</div><div class="sb">Loss Amt ÷ Del Count</div></div>
-    <div class="kpi k-teal"   style="animation-delay:.25s"><div class="lb">Total Loss Value</div><div class="vl">${f(tV,'rv')}</div><div class="sb">${pAgg.length} ${periodLabel.toLowerCase()}s</div></div>
-  </div>
-  <div class="grid3">
-    <div class="card"><div class="card-title">Deliveries — ${periodLabel} Trend</div><div style="position:relative;height:200px"><canvas id="ovDC"></canvas></div></div>
-    <div class="card"><div class="card-title">Esc % — ${periodLabel} Trend</div><div style="position:relative;height:200px"><canvas id="ovEC"></canvas></div></div>
-    <div class="card"><div class="card-title">LA % — ${periodLabel} Trend</div><div style="position:relative;height:200px"><canvas id="ovLC"></canvas></div></div>
-  </div>
-  <div class="grid2">
-    <div class="card"><div class="card-title">AOV — ${periodLabel} Trend</div><div style="position:relative;height:200px"><canvas id="ovAC"></canvas></div></div>
-    <div class="card"><div class="card-title">Approx CPO — ${periodLabel} Trend</div><div style="position:relative;height:200px"><canvas id="ovCC"></canvas></div></div>
-  </div>
-  <div class="card"><div class="card-title">Client Summary
-    <span class="card-hint">↕ Sort · ${periodLabel} view · Esc% & LA% show Δ per ${periodLabel.toLowerCase()}</span></div>
-  <div class="tw"><table><thead><tr>
-    ${th('name','Client','ov')}${th('del','Total Del','ov')}${th('esc','Esc','ov')}${th('escP','Esc %','ov')}
-    ${th('loss','Loss','ov')}${th('laP','LA %','ov')}${th('lv','Loss Value','ov')}${th('aov','AOV','ov')}${th('cpo','CPO','ov')}
+// Build client table header row (period-aware) with independent sort id
+function buildClientTableHeader(tid, isMonth, weeks, allMo) {
+  return `${th('name','Client',tid)}${th('del','Total Del',tid)}${th('esc','Esc',tid)}${th('escP','Esc %',tid)}
+    ${th('loss','Loss',tid)}${th('laP','LA %',tid)}${th('lv','Loss Value',tid)}${th('aov','AOV',tid)}${th('cpo','CPO',tid)}
     ${isMonth
       ? allMo.map(m=>`<th style="border-left:1px solid var(--border)">${m} Del</th><th>${m} Esc%</th><th>MoM Δ</th><th>${m} LA%</th><th>MoM Δ</th>`).join('')
       : weeks.map(w=>`<th style="border-left:1px solid var(--border)">${w.replace('2026-','')} Del</th><th>Esc%</th><th>WoW Δ</th>`).join('')
-    }
-  </tr></thead><tbody>`;
-
-  sorted.forEach(([name,d])=>{
+    }`;
+}
+// Build client table body rows (period-aware, colour-coded WoW/MoM cells) — matches screenshot styling
+function buildClientTableRows(rows, weeks, clientMoAgg, isMonth, allMo, mx) {
+  let out = '';
+  rows.forEach(([name,d])=>{
     const bar=`<span class="mbar" style="width:${Math.max(2,d.del/mx*50)}px;background:var(--blue);opacity:.3"></span>`;
     let periodCols='';
     if(isMonth){
@@ -1871,11 +1821,9 @@ function renderOv(){
         const mo=DB.mom.months.find(x=>x.mo===m.mo);
         const del=mo?.clients[name]?.del||0;
         const prev=i>0?moData[i-1]:null;
-        // Esc% colour: red if up (worse), green if down (better)
         const eDiff=prev?m.escP-prev.escP:0;
         const eBg=prev?(eDiff>0.001?'background:#fff0f0;color:#dc2626;':eDiff<-0.001?'background:#f0fdf4;color:#16a34a;':''):'';
         const eArr=prev?(eDiff>0.001?'▲':eDiff<-0.001?'▼':'→'):'';
-        // LA% colour: green if up (better), red if down (worse)
         const lDiff=prev?m.laP-prev.laP:0;
         const lBg=prev?(lDiff>0.001?'background:#f0fdf4;color:#16a34a;':lDiff<-0.001?'background:#fff0f0;color:#dc2626;':''):'';
         const lArr=prev?(lDiff>0.001?'▲':lDiff<-0.001?'▼':'→'):'';
@@ -1899,7 +1847,7 @@ function renderOv(){
           <td style="${bg}font-size:10px;font-weight:700;text-align:center">${prev!=null?`${arrow} ${Math.abs(diff).toFixed(2)}%`:''}</td>`;
       }).join('');
     }
-    h+=`<tr><td title="${name}">${name}${bchip(name)}</td>
+    out+=`<tr><td title="${name}">${name}${bchip(name)}</td>
       <td>${f(d.del,'n')}${bar}</td><td>${f(d.esc,'n')}</td>
       <td><span class="pill ${escCls(d.escP)}">${f(d.escP,'p')}</span></td>
       <td>${f(d.loss,'n')}</td>
@@ -1909,16 +1857,141 @@ function renderOv(){
       <td>${d.del>0?f(d.cpo,'cpo'):'—'}</td>
       ${periodCols}</tr>`;
   });
-  h+=`</tbody></table></div></div>`;
+  return out;
+}
+
+function renderOv(){
+  const clients=filteredClients();
+  // Period-aware aggregation
+  const isMonth = PERIOD==='month';
+  const pAgg    = getPeriodAgg(clients);
+  const lbs     = pAgg.map(d=>d.lbl||d.wk?.replace('2026-','')||d.mo||'');
+  const weeks   = getWeeks();
+
+  const tD=pAgg.reduce((s,d)=>s+d.del,0), tE=pAgg.reduce((s,d)=>s+d.esc,0);
+  const tL=pAgg.reduce((s,d)=>s+d.loss,0), tV=pAgg.reduce((s,d)=>s+d.lv,0);
+  const eP=tD>0?tE/tD*100:0, lP=tE>0?tL/tE*100:0, cpo=tD>0?tV/tD:0, aov=tL>0?tV/tL:0;
+
+  const periodLabel = isMonth ? 'Month' : 'Week';
+
+  let h=`<div class="krow">
+    <div class="kpi k-blue"   style="animation-delay:.0s"><div class="lb">Total Deliveries</div><div class="vl">${f(tD,'n')}</div><div class="sb">${clients.length} clients · ${pAgg.length} ${periodLabel.toLowerCase()}s</div></div>
+    <div class="kpi k-red"    style="animation-delay:.05s"><div class="lb">Overall Esc %</div><div class="vl">${f(eP,'p')}</div><div class="sb">${f(tE,'n')} escalations</div></div>
+    <div class="kpi k-green"  style="animation-delay:.1s"><div class="lb">Overall LA %</div><div class="vl">${f(lP,'p')}</div><div class="sb">${f(tL,'n')} accepted</div></div>
+    <div class="kpi k-amber"  style="animation-delay:.15s"><div class="lb">AOV</div><div class="vl">${f(aov,'cpo')}</div><div class="sb">Loss Amt ÷ Loss Count</div></div>
+    <div class="kpi k-purple" style="animation-delay:.2s"><div class="lb">Approx CPO</div><div class="vl">${f(cpo,'cpo')}</div><div class="sb">Loss Amt ÷ Del Count</div></div>
+    <div class="kpi k-teal"   style="animation-delay:.25s"><div class="lb">Total Loss Value</div><div class="vl">${f(tV,'rv')}</div><div class="sb">${pAgg.length} ${periodLabel.toLowerCase()}s</div></div>
+  </div>
+  <div class="grid3">
+    <div class="card"><div class="card-title">Deliveries — ${periodLabel} Trend</div><div style="position:relative;height:200px"><canvas id="ovDC"></canvas></div></div>
+    <div class="card"><div class="card-title">Esc % — ${periodLabel} Trend</div><div style="position:relative;height:200px"><canvas id="ovEC"></canvas></div></div>
+    <div class="card"><div class="card-title">LA % — ${periodLabel} Trend</div><div style="position:relative;height:200px"><canvas id="ovLC"></canvas></div></div>
+  </div>
+  <div class="grid2">
+    <div class="card"><div class="card-title">AOV — ${periodLabel} Trend</div><div style="position:relative;height:200px"><canvas id="ovAC"></canvas></div></div>
+    <div class="card"><div class="card-title">Approx CPO — ${periodLabel} Trend</div><div style="position:relative;height:200px"><canvas id="ovCC"></canvas></div></div>
+  </div>
+  <div class="card" style="text-align:center;padding:20px;color:var(--text3)">
+    Looking for the client-level tables? Check the <strong style="color:var(--text)">🏆 Top 20 Clients</strong> tab.
+  </div>`;
   document.getElementById('s-ov').innerHTML=h;
   const lbsP = getPeriodLabels();
   const multiClient = SEL_CLIENTS.length >= 2;
-  // When multiple clients: show each client as its own line on every chart
   lineChart('ovDC',lbsP, multiClient ? clientDatasets(clients,'del') : [{label:'Deliveries',color:'#3b82f6',data:pAgg.map(d=>d.del)}], v=>f(v,'n'));
   lineChart('ovEC',lbsP, multiClient ? clientDatasets(clients,'escP') : [{label:'Esc %',color:'#ef4444',data:pAgg.map(d=>d.escP)}], v=>v.toFixed(2)+'%');
   lineChart('ovLC',lbsP, multiClient ? clientDatasets(clients,'laP') : [{label:'LA %',color:'#10b981',data:pAgg.map(d=>d.laP)}], v=>v.toFixed(2)+'%');
   lineChart('ovAC',lbsP, multiClient ? clientDatasets(clients,'aov') : [{label:'AOV',color:'#f59e0b',data:pAgg.map(d=>d.aov)}], v=>'₹'+v.toFixed(2));
   lineChart('ovCC',lbsP, multiClient ? clientDatasets(clients,'cpo') : [{label:'CPO',color:'#8b5cf6',data:pAgg.map(d=>d.cpo)}], v=>'₹'+v.toFixed(2));
+}
+
+// ════════ TOP 20 CLIENTS (by Delivery Count) ════════
+function renderTop20(){
+  const clients=filteredClients();
+  const isMonth = PERIOD==='month';
+  const weeks   = getWeeks();
+
+  // Client agg over the selected period — used for the "current bucket" Top 20 table
+  const ca = isMonth
+    ? (() => {
+        const months=getMonths(), out={};
+        clients.forEach(c=>{
+          let del=0,esc=0,loss=0,lv=0;
+          months.forEach(mo=>{const m=DB.mom.months.find(x=>x.mo===mo);const d=m?.clients[c];if(d){del+=d.del;esc+=d.esc;loss+=d.loss;lv+=d.lv;}});
+          out[c]={del,esc,loss,lv,escP:del>0?esc/del*100:0,laP:esc>0?loss/esc*100:0,cpo:del>0?lv/del:0,aov:loss>0?lv/loss:0};
+        });
+        return out;
+      })()
+    : clientAgg(clients, weeks);
+
+  // Non-Meesho Non-AJIO client set — Meesho already excluded at data layer, so this = "not AJIO"
+  // Independent of the current bucket pill selection, always shows Non-AJIO clients specifically.
+  const aj = new Set(DB.meta.ajio);
+  const sq = document.getElementById('srch').value.toLowerCase();
+  const nmnaClients = DB.meta.clients.filter(c => {
+    if (aj.has(c)) return false;
+    if (SEL_CLIENTS.length && !SEL_CLIENTS.includes(c)) return false;
+    if (sq && !c.toLowerCase().includes(sq)) return false;
+    return true;
+  });
+  const caNMNA = isMonth
+    ? (() => {
+        const months=getMonths(), out={};
+        nmnaClients.forEach(c=>{
+          let del=0,esc=0,loss=0,lv=0;
+          months.forEach(mo=>{const m=DB.mom.months.find(x=>x.mo===mo);const d=m?.clients[c];if(d){del+=d.del;esc+=d.esc;loss+=d.loss;lv+=d.lv;}});
+          out[c]={del,esc,loss,lv,escP:del>0?esc/del*100:0,laP:esc>0?loss/esc*100:0,cpo:del>0?lv/del:0,aov:loss>0?lv/loss:0};
+        });
+        return out;
+      })()
+    : clientAgg(nmnaClients, weeks);
+
+  // Table 1: Top 20 Non-Meesho Non-AJIO clients by Delivery Count (always, regardless of bucket pill)
+  const top20NMNA = Object.entries(caNMNA).filter(([,d])=>d.del>0).sort((a,b)=>b[1].del-a[1].del).slice(0,20);
+  // Table 2: Top 20 Clients overall (within currently selected bucket/filter) by Delivery Count
+  const top20All = Object.entries(ca).filter(([,d])=>d.del>0).sort((a,b)=>b[1].del-a[1].del).slice(0,20);
+
+  const mxNMNA = Math.max(...top20NMNA.map(([,d])=>d.del),1);
+  const mxAll  = Math.max(...top20All.map(([,d])=>d.del),1);
+
+  // MoM data for table columns — build for the union of clients appearing in either table
+  const allMo=DB.meta.months;
+  const neededClients = new Set([...top20NMNA.map(([c])=>c), ...top20All.map(([c])=>c)]);
+  const clientMoAgg={};
+  neededClients.forEach(c=>{
+    clientMoAgg[c]=allMo.map(mo=>{
+      const m=DB.mom.months.find(x=>x.mo===mo);
+      const d=m?.clients[c];
+      if(!d)return{mo,escP:0,laP:0};
+      return{mo,escP:d.del>0?d.esc/d.del*100:0,laP:d.esc>0?d.loss/d.esc*100:0};
+    });
+  });
+
+  const periodLabel = isMonth ? 'Month' : 'Week';
+
+  let h=`<div class="card" style="margin-bottom:14px">
+    <div class="card-title" style="font-size:13px;text-transform:none;letter-spacing:0">
+      🏆 Top 20 Clients by Delivery Count — ${periodLabel} view
+    </div>
+  </div>
+
+  <div class="card"><div class="card-title">Client Summary — Top 20 Non-Meesho Non-AJIO Clients (by Delivery Count)
+    <span class="card-hint">↕ Sort · ${periodLabel} view · Esc% &amp; LA% show Δ per ${periodLabel.toLowerCase()}</span>
+  </div>
+  <div class="tw"><table><thead><tr>
+    ${buildClientTableHeader('ovNmna', isMonth, weeks, allMo)}
+  </tr></thead><tbody>
+    ${buildClientTableRows(top20NMNA, weeks, clientMoAgg, isMonth, allMo, mxNMNA)}
+  </tbody></table></div></div>
+
+  <div class="card"><div class="card-title">Top 20 Clients — by Delivery Count (Current Bucket: ${BKT==='all'?'Overall':BKT==='ajio'?'AJIO':'Non Meesho Non AJIO'})
+    <span class="card-hint">↕ Sort · ${periodLabel} view · Esc% &amp; LA% show Δ per ${periodLabel.toLowerCase()}</span>
+  </div>
+  <div class="tw"><table><thead><tr>
+    ${buildClientTableHeader('ovTop20', isMonth, weeks, allMo)}
+  </tr></thead><tbody>
+    ${buildClientTableRows(top20All, weeks, clientMoAgg, isMonth, allMo, mxAll)}
+  </tbody></table></div></div>`;
+  document.getElementById('s-top20').innerHTML=h;
 }
 
 // ════════ ESCALATION % ════════
