@@ -54,6 +54,8 @@ input[type=text]{width:130px;}
 .msel-apply{font-size:11px;padding:5px 14px;border-radius:6px;border:none;background:var(--blue);color:#fff;cursor:pointer;font-family:inherit;font-weight:600;transition:background .15s;}
 .msel-apply:hover{background:#2563eb;}
 .dl-opt:hover{background:var(--surface2);}
+.tbl-dl{font-size:10px;padding:3px 9px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;font-family:inherit;font-weight:600;white-space:nowrap;transition:all .15s;flex-shrink:0;}
+.tbl-dl:hover{background:var(--blue);color:#fff;border-color:var(--blue);}
 /* period toggle (Week / Month) */
 .period-toggle{display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;}
 .period-btn{font-size:11px;padding:5px 12px;border:none;background:var(--surface);color:var(--text3);cursor:pointer;font-family:inherit;transition:all .15s;}
@@ -451,7 +453,7 @@ async function renderViewers() {
       h += `
       <div class="grid2">
         <div class="card">
-          <div class="card-title">Browser Breakdown</div>
+          <div class="card-title">Browser Breakdown${dlBtn('browser_breakdown')}</div>
           <table><thead><tr>
             <th style="text-align:left">Browser</th>
             <th style="text-align:right">Views</th>
@@ -473,7 +475,7 @@ async function renderViewers() {
           </tbody></table>
         </div>
         <div class="card">
-          <div class="card-title">OS / Device Breakdown</div>
+          <div class="card-title">OS / Device Breakdown${dlBtn('os_device_breakdown')}</div>
           <table><thead><tr>
             <th style="text-align:left">OS</th>
             <th style="text-align:right">Views</th>
@@ -500,7 +502,7 @@ async function renderViewers() {
         <div class="card-title">
           Recent View History
           <span class="card-hint">last 100 views · auto-refreshes every 60s · logged to ViewLog sheet</span>
-          <button class="act-btn" onclick="renderViewers()" style="font-size:10px;padding:3px 10px">⟳ Refresh</button>
+          <span style="display:flex;gap:6px">${dlBtn('view_history')}<button class="act-btn" onclick="renderViewers()" style="font-size:10px;padding:3px 10px">⟳ Refresh</button></span>
         </div>
         <div class="tw">
         <table><thead><tr>
@@ -625,7 +627,40 @@ function showError(msg) {
     <strong>Permanent fix:</strong> run <code>installWarmCacheTrigger()</code> once in the Apps Script editor — this keeps the cache warm automatically every 4 minutes so this timeout won't recur.</div>`;
 }
 
-// ── DOWNLOAD MENU ─────────────────────────────────────────────
+// ── PER-TABLE CSV DOWNLOAD ────────────────────────────────────
+// Attach to any button inside a .card — finds the nearest table and
+// exports it as CSV, stripping badges/arrows down to clean text.
+function downloadTableCSV(btn, filename) {
+  const card = btn.closest('.card');
+  const table = card ? card.querySelector('table') : null;
+  if (!table) { alert('No table found to export.'); return; }
+  const rows = [...table.querySelectorAll('tr')];
+  const csvLines = rows.map(row => {
+    return [...row.querySelectorAll('th,td')].map(cell => {
+      let text = (cell.innerText || cell.textContent || '').replace(/\s+/g,' ').trim();
+      if (text.includes(',') || text.includes('"') || text.includes('\n')) {
+        text = '"' + text.replace(/"/g,'""') + '"';
+      }
+      return text;
+    }).join(',');
+  });
+  const csv = csvLines.join('\r\n');
+  const blob = new Blob(['\uFEFF' + csv], {type:'text/csv;charset=utf-8;'}); // BOM for Excel unicode (₹ etc)
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename.replace(/[^a-z0-9_\- ]/gi,'') + '_' + new Date().toISOString().slice(0,10) + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+// Renders the small download button HTML to drop into a card-title
+function dlBtn(filename) {
+  return `<button class="tbl-dl" onclick="downloadTableCSV(this,'${filename}')">⬇ CSV</button>`;
+}
+
+
 function toggleDlMenu(e) {
   e.stopPropagation();
   const m = document.getElementById('dlMenu');
@@ -1974,7 +2009,7 @@ function renderTop20(){
     </div>
   </div>
 
-  <div class="card"><div class="card-title">Client Summary — Top 20 Non-Meesho Non-AJIO Clients (by Delivery Count)
+  <div class="card"><div class="card-title">Client Summary — Top 20 Non-Meesho Non-AJIO Clients (by Delivery Count)${dlBtn('top20_nmna')}
     <span class="card-hint">↕ Sort · ${periodLabel} view · Esc% &amp; LA% show Δ per ${periodLabel.toLowerCase()}</span>
   </div>
   <div class="tw"><table><thead><tr>
@@ -1983,7 +2018,7 @@ function renderTop20(){
     ${buildClientTableRows(top20NMNA, weeks, clientMoAgg, isMonth, allMo, mxNMNA)}
   </tbody></table></div></div>
 
-  <div class="card"><div class="card-title">Top 20 Clients — by Delivery Count (Current Bucket: ${BKT==='all'?'Overall':BKT==='ajio'?'AJIO':'Non Meesho Non AJIO'})
+  <div class="card"><div class="card-title">Top 20 Clients — by Delivery Count (Current Bucket: ${BKT==='all'?'Overall':BKT==='ajio'?'AJIO':'Non Meesho Non AJIO'})${dlBtn('top20_overall')}
     <span class="card-hint">↕ Sort · ${periodLabel} view · Esc% &amp; LA% show Δ per ${periodLabel.toLowerCase()}</span>
   </div>
   <div class="tw"><table><thead><tr>
@@ -2044,7 +2079,7 @@ function renderEsc(){
     <div class="card"><div class="card-title">Overall Esc % &amp; Delivery Count — ${periodLabel} on ${periodLabel}</div><div style="position:relative;height:230px"><canvas id="escOC"></canvas></div></div>
     <div class="card"><div class="card-title">Top 8 Clients Esc % — ${periodLabel} on ${periodLabel}</div><div style="position:relative;height:230px"><canvas id="escCC"></canvas></div></div>
   </div>
-  <div class="card"><div class="card-title">Client-wise Esc % — ${periodLabel} on ${periodLabel} <span class="card-hint">↕ sort</span></div>
+  <div class="card"><div class="card-title">Client-wise Esc % — ${periodLabel} on ${periodLabel}${dlBtn('escalation_clientwise')} <span class="card-hint">↕ sort</span></div>
   <div class="tw"><table><thead><tr>
     ${th('name','Client','esc')}${th('del','Deliveries','esc')}${th('esc','Esc Count','esc')}${th('escP','Esc %','esc')}
     ${lbs.map((l,i)=>`<th onclick="clickFlat('escW',${i},true)" class="" style="cursor:pointer">${l} <span class="si">⇅</span></th><th>${deltaLabel}</th>`).join('')}
@@ -2143,7 +2178,7 @@ function renderLA(){
     <div class="card"><div class="card-title">Overall LA % — ${periodLabel} on ${periodLabel}</div><div style="position:relative;height:230px"><canvas id="laOC"></canvas></div></div>
     <div class="card"><div class="card-title">Top 20 by LA % (bar)</div><div style="position:relative;height:230px"><canvas id="laBrC"></canvas></div></div>
   </div>
-  <div class="card"><div class="card-title">Client-wise LA % — ${periodLabel} on ${periodLabel} <span class="card-hint">↕ sort</span></div>
+  <div class="card"><div class="card-title">Client-wise LA % — ${periodLabel} on ${periodLabel}${dlBtn('loss_accepted_clientwise')} <span class="card-hint">↕ sort</span></div>
   <div class="tw"><table><thead><tr>
     ${th('name','Client','la')}${th('del','Deliveries','la')}${th('esc','Esc Count','la')}${th('loss','Loss Count','la')}${th('laP','LA %','la')}
     ${lbs.map((l,i)=>`<th onclick="clickFlat('laW',${i},false)" style="cursor:pointer">${l} <span class="si">⇅</span></th><th>${deltaLabel}</th>`).join('')}
@@ -2211,7 +2246,7 @@ function renderAOV(){
     <div class="card"><div class="card-title">Top 20 by AOV</div><div style="position:relative;height:280px"><canvas id="aovBC"></canvas></div></div>
     <div class="card"><div class="card-title">Top 20 by Approx CPO</div><div style="position:relative;height:280px"><canvas id="cpoBC"></canvas></div></div>
   </div>
-  <div class="card"><div class="card-title">Client-wise AOV &amp; CPO <span class="card-hint">↕ sort · ${periodLabel} view</span></div>
+  <div class="card"><div class="card-title">Client-wise AOV &amp; CPO${dlBtn('aov_cpo_clientwise')} <span class="card-hint">↕ sort · ${periodLabel} view</span></div>
   <div class="tw"><table><thead><tr>
     ${th('name','Client','aov')}${th('del','Del Count','aov')}${th('loss','Loss Count','aov')}${th('lv','Loss Value','aov')}${th('aov','AOV','aov')}${th('cpo','Approx CPO','aov')}${th('laP','LA %','aov')}${th('escP','Esc %','aov')}
   </tr></thead><tbody>`;
@@ -2348,7 +2383,7 @@ function renderTrend(){
   </div>
 
   <!-- Quarterly summary table -->
-  <div class="card"><div class="card-title">Quarterly Summary <span class="card-hint">↕ sort · QoQ Δ shown in colour</span></div>
+  <div class="card"><div class="card-title">Quarterly Summary${dlBtn('quarterly_summary')} <span class="card-hint">↕ sort · QoQ Δ shown in colour</span></div>
   <div class="tw"><table><thead><tr>
     ${thF('Quarter',0,false,'trendQ')}${thF('Del',1,true,'trendQ')}${thF('QoQ Δ Del',2,false,'trendQ')}${thF('Esc',3,true,'trendQ')}${thF('Esc %',4,true,'trendQ')}${thF('QoQ Δ Esc%',5,false,'trendQ')}${thF('Loss',6,true,'trendQ')}${thF('LA %',7,true,'trendQ')}${thF('QoQ Δ LA%',8,false,'trendQ')}${thF('Loss Value',9,true,'trendQ')}${thF('AOV',10,true,'trendQ')}${thF('CPO',11,true,'trendQ')}
   </tr></thead><tbody>`;
@@ -2378,7 +2413,7 @@ function renderTrend(){
   h+=`</tbody></table></div></div>
 
   <!-- Per-client quarterly table -->
-  <div class="card"><div class="card-title">Client-wise Quarterly Breakdown <span class="card-hint">Del · Esc % · LA % per quarter</span></div>
+  <div class="card"><div class="card-title">Client-wise Quarterly Breakdown${dlBtn('quarterly_clientwise')} <span class="card-hint">Del · Esc % · LA % per quarter</span></div>
   <div class="tw"><table><thead><tr>
     <th style="text-align:left;position:sticky;top:0;background:var(--surface)">Client</th>
     ${qAgg.map(q=>`<th style="border-left:2px solid var(--border);text-align:center;color:var(--purple)" colspan="4">${q.lbl}</th>`).join('')}
@@ -2447,7 +2482,7 @@ function renderTrend(){
     <div style="flex:1;height:1px;background:var(--border)"></div>
     <div style="font-size:10px;color:var(--text3)">Always showing all data regardless of filters above</div>
   </div>
-  <div class="card"><div class="card-title">Week-wise Summary <span class="card-hint">All ${allWAgg.length} weeks · ↕ sort</span></div>
+  <div class="card"><div class="card-title">Week-wise Summary${dlBtn('week_wise_summary')} <span class="card-hint">All ${allWAgg.length} weeks · ↕ sort</span></div>
   <div class="tw"><table><thead><tr>
     ${thF('Week',0,false,'trendW')}${thF('Deliveries',1,true,'trendW')}${thF('Esc Count',2,true,'trendW')}${thF('Esc %',3,true,'trendW')}${thF('Loss Count',4,true,'trendW')}${thF('LA %',5,true,'trendW')}${thF('Loss Value',6,true,'trendW')}${thF('AOV',7,true,'trendW')}${thF('CPO',8,true,'trendW')}
   </tr></thead><tbody>`;
@@ -2462,7 +2497,7 @@ function renderTrend(){
       <td>${f(r[6],'rv')}</td><td>${f(r[7],'cpo')}</td><td>${f(r[8],'cpo')}</td></tr>`;
   });
   h+=`</tbody></table></div></div>
-  <div class="card"><div class="card-title">Month-wise Summary <span class="card-hint">All ${allMAgg.length} months · ↕ sort</span></div>
+  <div class="card"><div class="card-title">Month-wise Summary${dlBtn('month_wise_summary')} <span class="card-hint">All ${allMAgg.length} months · ↕ sort</span></div>
   <div class="tw"><table><thead><tr>
     ${thF('Month',0,false,'trendM')}${thF('Deliveries',1,true,'trendM')}${thF('Esc Count',2,true,'trendM')}${thF('Esc %',3,true,'trendM')}${thF('Loss Count',4,true,'trendM')}${thF('LA %',5,true,'trendM')}${thF('Loss Value',6,true,'trendM')}${thF('AOV',7,true,'trendM')}${thF('CPO',8,true,'trendM')}
   </tr></thead><tbody>`;
