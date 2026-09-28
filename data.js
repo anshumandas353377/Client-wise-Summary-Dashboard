@@ -3,14 +3,30 @@
 // Node.js runtime expects CommonJS unless package.json has "type":"module".
 // Using ESM "export default" without that flag causes the function build
 // to fail silently, which surfaces as a 404 on /api/data.
-const APPS_SCRIPT_URL =
+// The Apps Script web-app URL. Can be overridden WITHOUT a code change by setting the
+// Vercel environment variable APPS_SCRIPT_URL (Project → Settings → Environment Variables),
+// which makes switching to a new deployment a 1-minute job.
+const DEFAULT_URL =
   'https://script.google.com/macros/s/AKfycbyOxt7LYrvR6ahBzlwNpVdtamYwipDth7zKZmwSUMU7ocIK845tig7wo9m1LkvswR_1/exec';
+const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL || DEFAULT_URL;
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') { res.status(200).end(); return; }
+
+  // Answered locally (never calls Apps Script): which deployment is this proxy pointing at?
+  if (req.query.action === 'proxyinfo') {
+    const m = APPS_SCRIPT_URL.match(/\/macros\/s\/([^/]+)\//);
+    const id = m ? m[1] : APPS_SCRIPT_URL;
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(200).json({
+      source: process.env.APPS_SCRIPT_URL ? 'Vercel env var APPS_SCRIPT_URL' : 'hardcoded in api/data.js',
+      deploymentIdMasked: id.slice(0, 12) + '…' + id.slice(-8)
+    });
+    return;
+  }
 
   // Build query string — pass all params through to Apps Script
   const params = new URLSearchParams(req.query).toString();
