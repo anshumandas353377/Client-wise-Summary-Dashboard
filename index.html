@@ -2113,8 +2113,18 @@ async function yoyDiagnose(){
       ${r.rawRowsByYear['2025'] ? '<strong>2025 rows ARE in the sheet.</strong> If the dashboard still shows only 2026, click ⟳ Refresh (cache) — the backend is already updated.'
         : '<strong>No 2025 dates were readable from the date column.</strong> Check the "unreadable dates" samples above — the 2025 rows may be in a different date format, on another sheet, or the date column differs.'}</div>`;
   }catch(e){
+    let pi = '';
+    if (/Unknown action/i.test(e.message)) {
+      try {
+        const r = await apiFetch('proxyinfo');
+        pi = `<br><br><strong>Vercel is calling Apps Script deployment:</strong> <code>${r.deploymentIdMasked}</code> (${r.source})<br>
+          In the Apps Script project you edited, open Deploy → Manage deployments and compare: the deployment ID there must match this one. If it doesn't, you edited a different deployment/project than the one Vercel calls.`;
+      } catch (_) {
+        pi = `<br><br>Tip: deploy the latest <code>api/data.js</code> to Vercel and this box will also show which Apps Script deployment Vercel is calling.`;
+      }
+    }
     box.innerHTML = `<div style="margin-top:8px;text-align:left"><strong>Check failed:</strong> ${e.message}<br><br>
-      ${/Unknown action/i.test(e.message) ? '<strong>This means the OLD Code.gs is still live.</strong> The Apps Script web app has not been updated — see the steps above.' : ''}</div>`;
+      ${/Unknown action/i.test(e.message) ? '<strong>This means the OLD Code.gs is still live</strong> at the URL Vercel calls. The Apps Script web app has not been updated — see the steps above.' + pi : ''}</div>`;
   }
 }
 
