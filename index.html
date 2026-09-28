@@ -279,6 +279,7 @@ tr:last-child td{border-bottom:none;}
   <button class="tab"    onclick="sw('la',this)">✅ Loss Accepted %</button>
   <button class="tab"    onclick="sw('aov',this)">💰 AOV &amp; CPO</button>
   <button class="tab"    onclick="sw('trend',this)">📅 Trend View</button>
+  <button class="tab"    onclick="sw('yoy',this)">📆 YoY Compare</button>
   <button class="tab"    onclick="sw('viewers',this)">👁 View History</button>
 </div>
 <div class="body">
@@ -288,6 +289,7 @@ tr:last-child td{border-bottom:none;}
   <div id="s-la"      class="sec"></div>
   <div id="s-aov"     class="sec"></div>
   <div id="s-trend"   class="sec"></div>
+  <div id="s-yoy"     class="sec"></div>
   <div id="s-viewers" class="sec"></div>
 </div>
 <script>
@@ -594,7 +596,7 @@ async function loadData(retry) {
     updateWeekBtnLabel(); updateMonthBtnLabel(); updateClientBtnLabel();
     const lastMo = meta.months[meta.months.length-1] || '';
     document.getElementById('dataSubtitle').textContent =
-      'Jan 2026 – ' + lastMo + ' · ' + meta.clients.length + ' clients · Live · ' + new Date().toLocaleTimeString('en-IN');
+      (meta.months[0]||'') + ' – ' + lastMo + ' · ' + meta.clients.length + ' clients · Live · ' + new Date().toLocaleTimeString('en-IN');
     go();
     logPageView(); // non-blocking — log this session view
   } catch(e) {
@@ -775,13 +777,14 @@ async function downloadPdf() {
       {id:'esc',   i:1, title:'Escalation % Analysis'},
       {id:'la',    i:2, title:'Loss Accepted % Analysis'},
       {id:'aov',   i:3, title:'AOV & CPO Analysis'},
-      {id:'trend', i:4, title:'Trend View (Weekly / Monthly / Quarterly)'}
+      {id:'trend', i:4, title:'Trend View (Weekly / Monthly / Quarterly)'},
+      {id:'yoy',   i:6, title:'YoY Comparison (Same Month 2025 vs 2026)'}
     ];
-    const tbBtns = document.querySelectorAll('.tab');
+    const tabBtn = id => document.querySelector(`.tab[onclick*="sw('${id}'"]`);
     const origTab = TAB;
     for (let t=0; t<tabs.length; t++) {
       const info = tabs[t];
-      sw(info.id, tbBtns[info.i]);
+      sw(info.id, tabBtn(info.id));
       await new Promise(r => setTimeout(r, 900));
       const el = document.getElementById('s-'+info.id);
       const boxes = el.querySelectorAll('.tw');
@@ -807,7 +810,7 @@ async function downloadPdf() {
         yo += sh;
       }
     }
-    sw(origTab, tbBtns[tabs.findIndex(x=>x.id===origTab) || 0]);
+    sw(origTab, tabBtn(origTab));
 
     // ── Final: Thank you ───────────────────────────────────
     pdf.addPage();
@@ -865,7 +868,7 @@ async function downloadPpt() {
     const allMonths = DB.meta.months;
     const aprToJun = allMonths.filter(m => {
       const ml = m.slice(0,3).toLowerCase();
-      return ml==='apr' || ml==='may' || ml==='jun';
+      return m.endsWith("'26") && (ml==='apr' || ml==='may' || ml==='jun');
     });
     const tenureMos   = aprToJun.length > 0 ? aprToJun : allMonths.slice(-3);
     const tenureStart = tenureMos[0] || allMonths[0] || '';
@@ -1814,6 +1817,7 @@ function go(){
   if(TAB==='la')    renderLA();
   if(TAB==='aov')   renderAOV();
   if(TAB==='trend') renderTrend();
+  if(TAB==='yoy')   renderYoy();
 }
 
 // ════════ HELPER: get current period labels & agg data ════════
@@ -2027,6 +2031,171 @@ function renderTop20(){
     ${buildClientTableRows(top20All, weeks, clientMoAgg, isMonth, allMo, mxAll)}
   </tbody></table></div></div>`;
   document.getElementById('s-top20').innerHTML=h;
+}
+
+// ════════ YoY COMPARE — same months, 2025 vs 2026 ════════
+let YOY_MONTH = 'all';
+function setYoyMonth(v){ YOY_MONTH = v; go(); }
+
+// Month pairs that exist in BOTH years, e.g. {m:'Jun', a:"Jun'25", b:"Jun'26"}
+function yoyMonthPairs(){
+  const has = new Set(DB.meta.months);
+  return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+    .map(m=>({m, a:m+"'25", b:m+"'26"}))
+    .filter(p=>has.has(p.a) && has.has(p.b));
+}
+function yoySum(arr){
+  const t = arr.reduce((s,d)=>({del:s.del+d.del,esc:s.esc+d.esc,loss:s.loss+d.loss,lv:s.lv+d.lv}),{del:0,esc:0,loss:0,lv:0});
+  t.escP = t.del>0 ? t.esc/t.del*100 : 0;
+  t.laP  = t.esc>0 ? t.loss/t.esc*100 : 0;
+  t.cpo  = t.del>0 ? t.lv/t.del : 0;
+  t.aov  = t.loss>0 ? t.lv/t.loss : 0;
+  return t;
+}
+// good: 'up' = increase is good, 'down' = increase is bad, null = neutral
+const YOY_DIR = {del:'up', esc:'down', escP:'down', lv:'down', cpo:'down', aov:null};
+function yoyPct(a,b){ return a ? (b-a)/Math.abs(a)*100 : null; }
+function yoyDelta(key, a, b){
+  const d = b - a, pct = yoyPct(a,b);
+  let abs;
+  if (key==='escP')            abs = (d>=0?'+':'')+d.toFixed(2)+' pp';
+  else if (key==='cpo'||key==='aov') abs = (d>=0?'+':'-')+'₹'+Math.abs(d).toFixed(2);
+  else if (key==='lv')         abs = (d>=0?'+':'-')+'₹'+Math.round(Math.abs(d)).toLocaleString('en-IN');
+  else                         abs = (d>=0?'+':'')+Math.round(d).toLocaleString('en-IN');
+  const pctTxt = pct==null ? '—' : (pct>=0?'+':'')+pct.toFixed(1)+'%';
+  const dir = YOY_DIR[key];
+  let style = '';
+  if (dir && Math.abs(d) > 1e-9) {
+    const good = dir==='up' ? d>0 : d<0;
+    style = good ? 'background:#f0fdf4;color:#16a34a;font-weight:700;' : 'background:#fff0f0;color:#dc2626;font-weight:700;';
+  }
+  return {abs, pctTxt, style};
+}
+function yoyFmt(key, v){
+  if (key==='escP') return f(v,'p');
+  if (key==='cpo'||key==='aov') return f(v,'cpo');
+  if (key==='lv') return f(v,'rv');
+  return f(v,'n');
+}
+
+function renderYoy(){
+  const el = document.getElementById('s-yoy');
+  const pairsAll = yoyMonthPairs();
+  if (!pairsAll.length){
+    el.innerHTML = `<div class="err-box"><strong>No same-month overlap between 2025 and 2026</strong><br>
+      Months currently loaded: ${DB.meta.months.join(', ')}<br><br>
+      2025 rows must exist in the Base sheet from June 2025. If they do, redeploy the updated Code.gs (new deployment) and click Refresh.</div>`;
+    return;
+  }
+  if (YOY_MONTH!=='all' && !pairsAll.some(p=>p.m===YOY_MONTH)) YOY_MONTH='all';
+  const pairs   = YOY_MONTH==='all' ? pairsAll : pairsAll.filter(p=>p.m===YOY_MONTH);
+  const clients = filteredClients();
+  const A = monthAggForClients(pairs.map(p=>p.a), clients);
+  const B = monthAggForClients(pairs.map(p=>p.b), clients);
+  const TA = yoySum(A), TB = yoySum(B);
+
+  const metrics = [
+    {k:'del',  lbl:'Del Count',        cls:'k-blue'},
+    {k:'esc',  lbl:'Esc Count',        cls:'k-red'},
+    {k:'escP', lbl:'Esc %',            cls:'k-red'},
+    {k:'lv',   lbl:'Final Loss Value', cls:'k-teal'},
+    {k:'cpo',  lbl:'CPO',              cls:'k-purple'},
+    {k:'aov',  lbl:'AOV',              cls:'k-amber'}
+  ];
+  const scope = YOY_MONTH==='all' ? pairs.map(p=>p.m).join(', ') : YOY_MONTH;
+
+  let h = `<div class="sub-filter">
+    <div class="fg"><label>Compare month</label>
+      <select onchange="setYoyMonth(this.value)">
+        <option value="all" ${YOY_MONTH==='all'?'selected':''}>All overlapping months (${pairsAll.map(p=>p.m).join(', ')})</option>
+        ${pairsAll.map(p=>`<option value="${p.m}" ${YOY_MONTH===p.m?'selected':''}>${p.m}'25 vs ${p.m}'26</option>`).join('')}
+      </select></div>
+    <span class="card-hint">Respects bucket pills, client filter &amp; search · Final Loss Value = Loss Value · the latest 2026 month may be part-month</span>
+  </div>
+  <div class="krow">
+    ${metrics.map((m,i)=>{
+      const d = yoyDelta(m.k, TA[m.k], TB[m.k]);
+      return `<div class="kpi ${m.cls}" style="animation-delay:${i*.05}s">
+        <div class="lb">${m.lbl} · 2026</div><div class="vl">${yoyFmt(m.k,TB[m.k])}</div>
+        <div class="sb">2025: ${yoyFmt(m.k,TA[m.k])}</div>
+        <div class="sb"><span style="padding:1px 6px;border-radius:5px;${d.style}">${d.abs} (${d.pctTxt})</span></div></div>`;
+    }).join('')}
+  </div>
+  <div class="grid3">
+    ${metrics.map(m=>`<div class="card"><div class="card-title">${m.lbl} — 2025 vs 2026</div><div style="position:relative;height:210px"><canvas id="yoy_${m.k}"></canvas></div></div>`).join('')}
+  </div>`;
+
+  // ── Month-wise table ──
+  const cols = [['del','Del'],['esc','Esc'],['escP','Esc %'],['lv','Loss Value'],['cpo','CPO'],['aov','AOV']];
+  h += `<div class="card"><div class="card-title">Month-wise YoY — ${scope}${dlBtn('yoy_monthwise')}
+      <span class="card-hint">Δ = 2026 − 2025 · green = better, red = worse (AOV neutral)</span></div>
+    <div class="tw"><table><thead><tr><th style="text-align:left">Month</th>
+      ${cols.map(([k,l])=>`<th>${l} 2025</th><th>${l} 2026</th><th>${l} Δ</th><th>${l} % Chg</th>`).join('')}
+    </tr></thead><tbody>`;
+  const rowFor = (label, a, b) => {
+    let r = `<tr><td><strong>${label}</strong></td>`;
+    cols.forEach(([k])=>{
+      const d = yoyDelta(k, a[k], b[k]);
+      r += `<td>${yoyFmt(k,a[k])}</td><td>${yoyFmt(k,b[k])}</td><td style="${d.style}">${d.abs}</td><td style="${d.style}">${d.pctTxt}</td>`;
+    });
+    return r + '</tr>';
+  };
+  pairs.forEach((p,i)=>{ h += rowFor(p.m+"'25 → '26", A[i], B[i]); });
+  if (pairs.length>1) h += rowFor('TOTAL (selected months)', TA, TB);
+  h += `</tbody></table></div></div>`;
+
+  // ── Client-wise table (selected months combined) ──
+  const byLbl = {}; DB.mom.months.forEach(m=>{ byLbl[m.mo]=m; });
+  const sumClient = (lbls,c)=>yoySum(lbls.map(l=>{
+    const d = byLbl[l] && byLbl[l].clients[c];
+    return d || {del:0,esc:0,loss:0,lv:0};
+  }));
+  const rows = [];
+  clients.forEach(c=>{
+    const a = sumClient(pairs.map(p=>p.a), c), b = sumClient(pairs.map(p=>p.b), c);
+    if (a.del + b.del <= 0) return;
+    rows.push([c, a.del,b.del,yoyPct(a.del,b.del), a.esc,b.esc, a.escP,b.escP,b.escP-a.escP,
+               a.lv,b.lv,yoyPct(a.lv,b.lv), a.cpo,b.cpo,yoyPct(a.cpo,b.cpo), a.aov,b.aov]);
+  });
+  const s = getSort('yoyC','__none__','asc');
+  const sorted = s.col==='__none__' ? [...rows].sort((x,y)=>y[2]-x[2]) : sortRows(rows, parseInt(s.col), s.col!=='0', 'yoyC');
+  const pc = (v,dir)=>{ // % change cell
+    if (v==null) return '<td>—</td>';
+    const good = dir==='up' ? v>0 : v<0;
+    const st = Math.abs(v)<0.05 ? '' : (good?'background:#f0fdf4;color:#16a34a;':'background:#fff0f0;color:#dc2626;');
+    return `<td style="${st}font-weight:700">${v>=0?'+':''}${v.toFixed(1)}%</td>`;
+  };
+  const H = [['Client',0,false],['Del 2025',1,true],['Del 2026',2,true],['Del % Chg',3,true],['Esc 2025',4,true],['Esc 2026',5,true],
+    ['Esc% 2025',6,true],['Esc% 2026',7,true],['Esc% Δ (pp)',8,true],['Loss Val 2025',9,true],['Loss Val 2026',10,true],['Loss Val % Chg',11,true],
+    ['CPO 2025',12,true],['CPO 2026',13,true],['CPO % Chg',14,true],['AOV 2025',15,true],['AOV 2026',16,true]];
+  h += `<div class="card"><div class="card-title">Client-wise YoY — ${scope} (${sorted.length} clients)${dlBtn('yoy_clientwise')}
+      <span class="card-hint">↕ sort · default: 2026 deliveries</span></div>
+    <div class="tw"><table><thead><tr>${H.map(([l,i,n])=>thF(l,i,n,'yoyC')).join('')}</tr></thead><tbody>`;
+  sorted.forEach(r=>{
+    const escD = r[8];
+    const escSt = Math.abs(escD)<0.005 ? '' : (escD<0?'background:#f0fdf4;color:#16a34a;':'background:#fff0f0;color:#dc2626;');
+    h += `<tr><td title="${r[0]}">${r[0]}${bchip(r[0])}</td>
+      <td>${f(r[1],'n')}</td><td>${f(r[2],'n')}</td>${pc(r[3],'up')}
+      <td>${f(r[4],'n')}</td><td>${f(r[5],'n')}</td>
+      <td>${f(r[6],'p')}</td><td>${f(r[7],'p')}</td><td style="${escSt}font-weight:700">${escD>=0?'+':''}${escD.toFixed(2)}</td>
+      <td>${f(r[9],'rv')}</td><td>${f(r[10],'rv')}</td>${pc(r[11],'down')}
+      <td>${r[12]>0?f(r[12],'cpo'):'—'}</td><td>${r[13]>0?f(r[13],'cpo'):'—'}</td>${pc(r[14],'down')}
+      <td>${r[15]>0?f(r[15],'cpo'):'—'}</td><td>${r[16]>0?f(r[16],'cpo'):'—'}</td></tr>`;
+  });
+  h += `</tbody></table></div></div>`;
+  el.innerHTML = h;
+
+  // ── Charts: 2025 (grey) vs 2026 (blue), same months on the x-axis ──
+  const lbs = pairs.map(p=>p.m);
+  metrics.forEach(m=>{
+    const fmt = m.k==='escP' ? (v=>v==null?'':v.toFixed(2)+'%')
+              : (m.k==='cpo'||m.k==='aov') ? (v=>v==null?'':'₹'+v.toFixed(2))
+              : (v=>v==null?'':f(v,'n'));
+    lineChart('yoy_'+m.k, lbs, [
+      {label:'2025', color:'#94a3b8', data:A.map(d=>d[m.k])},
+      {label:'2026', color:'#3b82f6', data:B.map(d=>d[m.k])}
+    ], fmt, 210);
+  });
 }
 
 // ════════ ESCALATION % ════════
