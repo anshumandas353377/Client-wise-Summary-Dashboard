@@ -280,6 +280,7 @@ tr:last-child td{border-bottom:none;}
   <button class="tab"    onclick="sw('aov',this)">💰 AOV &amp; CPO</button>
   <button class="tab"    onclick="sw('trend',this)">📅 Trend View</button>
   <button class="tab"    onclick="sw('yoy',this)">📆 YoY Compare</button>
+  <button class="tab"    onclick="sw('yoyc',this)">🏢 YoY Client-wise</button>
   <button class="tab"    onclick="sw('viewers',this)">👁 View History</button>
 </div>
 <div class="body">
@@ -290,6 +291,7 @@ tr:last-child td{border-bottom:none;}
   <div id="s-aov"     class="sec"></div>
   <div id="s-trend"   class="sec"></div>
   <div id="s-yoy"     class="sec"></div>
+  <div id="s-yoyc"    class="sec"></div>
   <div id="s-viewers" class="sec"></div>
 </div>
 <script>
@@ -778,7 +780,8 @@ async function downloadPdf() {
       {id:'la',    i:2, title:'Loss Accepted % Analysis'},
       {id:'aov',   i:3, title:'AOV & CPO Analysis'},
       {id:'trend', i:4, title:'Trend View (Weekly / Monthly / Quarterly)'},
-      {id:'yoy',   i:6, title:'YoY Comparison (Same Month 2025 vs 2026)'}
+      {id:'yoy',   i:6, title:'YoY Comparison (Same Month 2025 vs 2026)'},
+      {id:'yoyc',  i:7, title:'YoY Client-wise Comparison (2025 vs 2026)'}
     ];
     const tabBtn = id => document.querySelector(`.tab[onclick*="sw('${id}'"]`);
     const origTab = TAB;
@@ -1818,6 +1821,7 @@ function go(){
   if(TAB==='aov')   renderAOV();
   if(TAB==='trend') renderTrend();
   if(TAB==='yoy')   renderYoy();
+  if(TAB==='yoyc')  renderYoyClient();
 }
 
 // ════════ HELPER: get current period labels & agg data ════════
@@ -2144,45 +2148,8 @@ function renderYoy(){
   if (pairs.length>1) h += rowFor('TOTAL (selected months)', TA, TB);
   h += `</tbody></table></div></div>`;
 
-  // ── Client-wise table (selected months combined) ──
-  const byLbl = {}; DB.mom.months.forEach(m=>{ byLbl[m.mo]=m; });
-  const sumClient = (lbls,c)=>yoySum(lbls.map(l=>{
-    const d = byLbl[l] && byLbl[l].clients[c];
-    return d || {del:0,esc:0,loss:0,lv:0};
-  }));
-  const rows = [];
-  clients.forEach(c=>{
-    const a = sumClient(pairs.map(p=>p.a), c), b = sumClient(pairs.map(p=>p.b), c);
-    if (a.del + b.del <= 0) return;
-    rows.push([c, a.del,b.del,yoyPct(a.del,b.del), a.esc,b.esc, a.escP,b.escP,b.escP-a.escP,
-               a.lv,b.lv,yoyPct(a.lv,b.lv), a.cpo,b.cpo,yoyPct(a.cpo,b.cpo), a.aov,b.aov]);
-  });
-  const s = getSort('yoyC','__none__','asc');
-  const sorted = s.col==='__none__' ? [...rows].sort((x,y)=>y[2]-x[2]) : sortRows(rows, parseInt(s.col), s.col!=='0', 'yoyC');
-  const pc = (v,dir)=>{ // % change cell
-    if (v==null) return '<td>—</td>';
-    const good = dir==='up' ? v>0 : v<0;
-    const st = Math.abs(v)<0.05 ? '' : (good?'background:#f0fdf4;color:#16a34a;':'background:#fff0f0;color:#dc2626;');
-    return `<td style="${st}font-weight:700">${v>=0?'+':''}${v.toFixed(1)}%</td>`;
-  };
-  const H = [['Client',0,false],['Del 2025',1,true],['Del 2026',2,true],['Del % Chg',3,true],['Esc 2025',4,true],['Esc 2026',5,true],
-    ['Esc% 2025',6,true],['Esc% 2026',7,true],['Esc% Δ (pp)',8,true],['Loss Val 2025',9,true],['Loss Val 2026',10,true],['Loss Val % Chg',11,true],
-    ['CPO 2025',12,true],['CPO 2026',13,true],['CPO % Chg',14,true],['AOV 2025',15,true],['AOV 2026',16,true]];
-  h += `<div class="card"><div class="card-title">Client-wise YoY — ${scope} (${sorted.length} clients)${dlBtn('yoy_clientwise')}
-      <span class="card-hint">↕ sort · default: 2026 deliveries</span></div>
-    <div class="tw"><table><thead><tr>${H.map(([l,i,n])=>thF(l,i,n,'yoyC')).join('')}</tr></thead><tbody>`;
-  sorted.forEach(r=>{
-    const escD = r[8];
-    const escSt = Math.abs(escD)<0.005 ? '' : (escD<0?'background:#f0fdf4;color:#16a34a;':'background:#fff0f0;color:#dc2626;');
-    h += `<tr><td title="${r[0]}">${r[0]}${bchip(r[0])}</td>
-      <td>${f(r[1],'n')}</td><td>${f(r[2],'n')}</td>${pc(r[3],'up')}
-      <td>${f(r[4],'n')}</td><td>${f(r[5],'n')}</td>
-      <td>${f(r[6],'p')}</td><td>${f(r[7],'p')}</td><td style="${escSt}font-weight:700">${escD>=0?'+':''}${escD.toFixed(2)}</td>
-      <td>${f(r[9],'rv')}</td><td>${f(r[10],'rv')}</td>${pc(r[11],'down')}
-      <td>${r[12]>0?f(r[12],'cpo'):'—'}</td><td>${r[13]>0?f(r[13],'cpo'):'—'}</td>${pc(r[14],'down')}
-      <td>${r[15]>0?f(r[15],'cpo'):'—'}</td><td>${r[16]>0?f(r[16],'cpo'):'—'}</td></tr>`;
-  });
-  h += `</tbody></table></div></div>`;
+  h += `<div class="card" style="text-align:center;padding:16px;color:var(--text3)">
+    Client-by-client yearly comparison lives in the <strong style="color:var(--text)">🏢 YoY Client-wise</strong> tab.</div>`;
   el.innerHTML = h;
 
   // ── Charts: 2025 (grey) vs 2026 (blue), same months on the x-axis ──
@@ -2196,6 +2163,181 @@ function renderYoy(){
       {label:'2026', color:'#3b82f6', data:B.map(d=>d[m.k])}
     ], fmt, 210);
   });
+}
+
+// ════════ YoY CLIENT-WISE — dedicated tab ════════
+let YOYC_MIN = 0, YOYC_CLIENT = '';
+function setYoycMin(v){ YOYC_MIN = parseInt(v)||0; go(); }
+function setYoycClient(v){ YOYC_CLIENT = v; go(); }
+
+function renderYoyClient(){
+  const el = document.getElementById('s-yoyc');
+  const pairsAll = yoyMonthPairs();
+  if (!pairsAll.length){
+    el.innerHTML = `<div class="err-box"><strong>No same-month overlap between 2025 and 2026</strong><br>
+      Months currently loaded: ${DB.meta.months.join(', ')}<br><br>
+      2025 rows must exist in the Base sheet from June 2025. Redeploy the updated Code.gs (new deployment) and click Refresh.</div>`;
+    return;
+  }
+  if (YOY_MONTH!=='all' && !pairsAll.some(p=>p.m===YOY_MONTH)) YOY_MONTH='all';
+  const pairs   = YOY_MONTH==='all' ? pairsAll : pairsAll.filter(p=>p.m===YOY_MONTH);
+  const scope   = YOY_MONTH==='all' ? pairs.map(p=>p.m).join(', ') : YOY_MONTH;
+  const clients = filteredClients();
+
+  // per-client aggregates for 2025 vs 2026 (same months)
+  const byLbl = {}; DB.mom.months.forEach(m=>{ byLbl[m.mo]=m; });
+  const sumClient = (lbls,c)=>yoySum(lbls.map(l=>{
+    const d = byLbl[l] && byLbl[l].clients[c];
+    return d || {del:0,esc:0,loss:0,lv:0};
+  }));
+  const rows = [];
+  clients.forEach(c=>{
+    const a = sumClient(pairs.map(p=>p.a), c), b = sumClient(pairs.map(p=>p.b), c);
+    if (a.del + b.del <= 0 || a.del + b.del < YOYC_MIN) return;
+    let verdict;
+    if (a.del<=0) verdict='New in 2026';
+    else if (b.del<=0) verdict='No 2026 volume';
+    else {
+      const eD=b.escP-a.escP, cD=b.cpo-a.cpo;
+      const eBetter=eD<-0.005, eWorse=eD>0.005, cBetter=cD<-0.005, cWorse=cD>0.005;
+      verdict = (eBetter&&!cWorse)||(cBetter&&!eWorse) ? ((eBetter&&cBetter)?'Improved':'Mostly better')
+              : (eWorse&&!cBetter)||(cWorse&&!eBetter) ? ((eWorse&&cWorse)?'Worse':'Mostly worse')
+              : (eBetter||eWorse||cBetter||cWorse) ? 'Mixed' : 'Flat';
+    }
+    rows.push({c,a,b,verdict,both:a.del>0&&b.del>0});
+  });
+
+  // flat rows for the sortable table
+  const flat = rows.map(r=>[r.c,
+    r.a.del,r.b.del,yoyPct(r.a.del,r.b.del),
+    r.a.esc,r.b.esc,yoyPct(r.a.esc,r.b.esc),
+    r.a.escP,r.b.escP,r.b.escP-r.a.escP,
+    r.a.lv,r.b.lv,yoyPct(r.a.lv,r.b.lv),
+    r.a.cpo,r.b.cpo,r.b.cpo-r.a.cpo,yoyPct(r.a.cpo,r.b.cpo),
+    r.a.aov,r.b.aov,yoyPct(r.a.aov,r.b.aov),
+    r.verdict]);
+
+  const cmp = rows.filter(r=>r.both);
+  const cnt = fn => cmp.filter(fn).length;
+  const escBetter = cnt(r=>r.b.escP-r.a.escP<-0.005), escWorse = cnt(r=>r.b.escP-r.a.escP>0.005);
+  const cpoBetter = cnt(r=>r.b.cpo-r.a.cpo<-0.005),  cpoWorse = cnt(r=>r.b.cpo-r.a.cpo>0.005);
+  const newC = rows.filter(r=>r.a.del<=0).length, lostC = rows.filter(r=>r.b.del<=0).length;
+
+  // drill-down client
+  const names = flat.map(r=>r[0]).sort((x,y)=>x.localeCompare(y));
+  if (YOYC_CLIENT && !names.includes(YOYC_CLIENT)) YOYC_CLIENT = '';
+
+  const kpi = (cls,lbl,val,sub,i)=>`<div class="kpi ${cls}" style="animation-delay:${i*.05}s"><div class="lb">${lbl}</div><div class="vl">${val}</div><div class="sb">${sub}</div></div>`;
+  let h = `<div class="sub-filter">
+    <div class="fg"><label>Compare month</label>
+      <select onchange="setYoyMonth(this.value)">
+        <option value="all" ${YOY_MONTH==='all'?'selected':''}>All overlapping months (${pairsAll.map(p=>p.m).join(', ')})</option>
+        ${pairsAll.map(p=>`<option value="${p.m}" ${YOY_MONTH===p.m?'selected':''}>${p.m}'25 vs ${p.m}'26</option>`).join('')}
+      </select></div>
+    <div class="fg"><label>Min Del (2025+2026)</label>
+      <select onchange="setYoycMin(this.value)">
+        ${[[0,'No min'],[100,'100+'],[500,'500+'],[1000,'1K+'],[5000,'5K+'],[10000,'10K+']].map(([v,l])=>`<option value="${v}" ${YOYC_MIN===v?'selected':''}>${l}</option>`).join('')}
+      </select></div>
+    <span class="card-hint">Respects bucket pills, client filter &amp; search · Final Loss Value = Loss Value · latest 2026 month may be part-month</span>
+  </div>
+  <div class="krow">
+    ${kpi('k-blue','Clients compared',cmp.length,`in both years · ${rows.length} total`,0)}
+    ${kpi('k-green','Esc % improved',escBetter,`of ${cmp.length} clients`,1)}
+    ${kpi('k-red','Esc % worse',escWorse,`of ${cmp.length} clients`,2)}
+    ${kpi('k-green','CPO improved',cpoBetter,`of ${cmp.length} clients`,3)}
+    ${kpi('k-red','CPO worse',cpoWorse,`of ${cmp.length} clients`,4)}
+    ${kpi('k-amber','New / no 2026',`${newC} / ${lostC}`,'new in 2026 · no 2026 volume',5)}
+  </div>`;
+
+  // top movers
+  const mv = (title, list, valFn, dFn, style)=>`<div class="card"><div class="card-title">${title}${dlBtn('yoy_movers')}</div>
+    <div class="tw" style="max-height:340px"><table><thead><tr><th style="text-align:left">Client</th><th>2025</th><th>2026</th><th>Δ</th><th>Del 2026</th></tr></thead><tbody>
+    ${list.length? list.map(r=>`<tr><td title="${r.c}">${r.c}${bchip(r.c)}</td><td>${valFn(r.a)}</td><td>${valFn(r.b)}</td><td style="${style}font-weight:700">${dFn(r)}</td><td>${f(r.b.del,'n')}</td></tr>`).join('')
+    : '<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:14px">None</td></tr>'}
+    </tbody></table></div></div>`;
+  const G='background:#f0fdf4;color:#16a34a;', R='background:#fff0f0;color:#dc2626;';
+  const escD = r=>r.b.escP-r.a.escP, cpoD = r=>r.b.cpo-r.a.cpo;
+  const top = (fn,dir)=>[...cmp].filter(r=>dir>0?fn(r)>0.005:fn(r)<-0.005).sort((x,y)=>dir>0?fn(y)-fn(x):fn(x)-fn(y)).slice(0,10);
+  h += `<div class="grid2">
+    ${mv('Esc % got worse — top 10', top(escD,1), a=>f(a.escP,'p'), r=>'+'+escD(r).toFixed(2)+' pp', R)}
+    ${mv('Esc % improved — top 10', top(escD,-1), a=>f(a.escP,'p'), r=>escD(r).toFixed(2)+' pp', G)}
+    ${mv('CPO got worse — top 10', top(cpoD,1), a=>f(a.cpo,'cpo'), r=>'+₹'+cpoD(r).toFixed(2), R)}
+    ${mv('CPO improved — top 10', top(cpoD,-1), a=>f(a.cpo,'cpo'), r=>'-₹'+Math.abs(cpoD(r)).toFixed(2), G)}
+  </div>`;
+
+  // client-wise table
+  const s = getSort('yoycT','__none__','asc');
+  const sorted = s.col==='__none__' ? [...flat].sort((x,y)=>y[2]-x[2]) : sortRows(flat, parseInt(s.col), !['0','20'].includes(s.col), 'yoycT');
+  const pc = (v,dir)=>{
+    if (v==null) return '<td>—</td>';
+    const good = dir==='up' ? v>0 : v<0;
+    const st = Math.abs(v)<0.05 ? '' : (good?G:R);
+    return `<td style="${st}font-weight:700">${v>=0?'+':''}${v.toFixed(1)}%</td>`;
+  };
+  const H = [['Client',0,false],['Del 2025',1,true],['Del 2026',2,true],['Del % Chg',3,true],
+    ['Esc 2025',4,true],['Esc 2026',5,true],['Esc % Chg',6,true],
+    ['Esc% 2025',7,true],['Esc% 2026',8,true],['Esc% Δ (pp)',9,true],
+    ['Loss Val 2025',10,true],['Loss Val 2026',11,true],['Loss Val % Chg',12,true],
+    ['CPO 2025',13,true],['CPO 2026',14,true],['CPO Δ (₹)',15,true],['CPO % Chg',16,true],
+    ['AOV 2025',17,true],['AOV 2026',18,true],['AOV % Chg',19,true],['Verdict',20,false]];
+  const vStyle = v=> v==='Improved'||v==='Mostly better' ? G : v==='Worse'||v==='Mostly worse' ? R : v.startsWith('New')||v.startsWith('No ') ? 'background:#eff6ff;color:#2563eb;' : '';
+  h += `<div class="card"><div class="card-title">Client-wise Yearly Comparison — ${scope} (${sorted.length} clients)${dlBtn('yoy_clientwise')}
+      <span class="card-hint">↕ sort · default: 2026 deliveries · Verdict uses Esc% and CPO direction</span></div>
+    <div class="tw"><table><thead><tr>${H.map(([l,i,n])=>thF(l,i,n,'yoycT')).join('')}</tr></thead><tbody>`;
+  sorted.forEach(r=>{
+    const eD=r[9], cD=r[15];
+    const eSt = Math.abs(eD)<0.005 ? '' : (eD<0?G:R), cSt = Math.abs(cD)<0.005 ? '' : (cD<0?G:R);
+    h += `<tr><td title="${r[0]}">${r[0]}${bchip(r[0])}</td>
+      <td>${f(r[1],'n')}</td><td>${f(r[2],'n')}</td>${pc(r[3],'up')}
+      <td>${f(r[4],'n')}</td><td>${f(r[5],'n')}</td>${pc(r[6],'down')}
+      <td>${f(r[7],'p')}</td><td>${f(r[8],'p')}</td><td style="${eSt}font-weight:700">${eD>=0?'+':''}${eD.toFixed(2)}</td>
+      <td>${f(r[10],'rv')}</td><td>${f(r[11],'rv')}</td>${pc(r[12],'down')}
+      <td>${r[13]>0?f(r[13],'cpo'):'—'}</td><td>${r[14]>0?f(r[14],'cpo'):'—'}</td><td style="${cSt}font-weight:700">${cD>=0?'+':'-'}₹${Math.abs(cD).toFixed(2)}</td>${pc(r[16],'down')}
+      <td>${r[17]>0?f(r[17],'cpo'):'—'}</td><td>${r[18]>0?f(r[18],'cpo'):'—'}</td>${pc(r[19],null)}
+      <td><span class="pill" style="${vStyle(r[20])}border:1px solid var(--border)">${r[20]}</span></td></tr>`;
+  });
+  h += `</tbody></table></div></div>`;
+
+  // drill-down: one client, month by month
+  h += `<div class="card"><div class="card-title">Client drill-down — month by month, 2025 vs 2026
+      <select onchange="setYoycClient(this.value)" style="max-width:260px">
+        <option value="">Select a client…</option>
+        ${names.map(n=>`<option value="${n.replace(/"/g,'&quot;')}" ${YOYC_CLIENT===n?'selected':''}>${n}</option>`).join('')}
+      </select></div>`;
+  const metrics = [['del','Del Count'],['esc','Esc Count'],['escP','Esc %'],['lv','Final Loss Value'],['cpo','CPO'],['aov','AOV']];
+  let cA=null, cB=null;
+  if (!YOYC_CLIENT){
+    h += `<div style="text-align:center;color:var(--text3);padding:24px">Pick a client above to see its month-by-month comparison, charts and totals.</div></div>`;
+  } else {
+    cA = monthAggForClients(pairs.map(p=>p.a), [YOYC_CLIENT]);
+    cB = monthAggForClients(pairs.map(p=>p.b), [YOYC_CLIENT]);
+    const tA = yoySum(cA), tB = yoySum(cB);
+    h += `<div class="grid3" style="margin-top:6px">
+      ${metrics.map(([k,l])=>`<div style="position:relative;height:190px"><div style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;margin-bottom:4px">${l}</div><div style="position:relative;height:170px"><canvas id="yoyc_${k}"></canvas></div></div>`).join('')}
+    </div>
+    <div class="tw" style="margin-top:10px"><table><thead><tr><th style="text-align:left">Month</th>
+      ${metrics.map(([k,l])=>`<th>${l} 2025</th><th>${l} 2026</th><th>Δ</th><th>% Chg</th>`).join('')}</tr></thead><tbody>`;
+    const rowFor = (label,a,b)=>{
+      let r = `<tr><td><strong>${label}</strong></td>`;
+      metrics.forEach(([k])=>{ const d=yoyDelta(k,a[k],b[k]); r += `<td>${yoyFmt(k,a[k])}</td><td>${yoyFmt(k,b[k])}</td><td style="${d.style}">${d.abs}</td><td style="${d.style}">${d.pctTxt}</td>`; });
+      return r+'</tr>';
+    };
+    pairs.forEach((p,i)=>{ h += rowFor(p.m+"'25 → '26", cA[i], cB[i]); });
+    if (pairs.length>1) h += rowFor('TOTAL', tA, tB);
+    h += `</tbody></table></div></div>`;
+  }
+  el.innerHTML = h;
+
+  if (YOYC_CLIENT){
+    const lbs = pairs.map(p=>p.m);
+    metrics.forEach(([k])=>{
+      const fmt = k==='escP' ? (v=>v==null?'':v.toFixed(2)+'%') : (k==='cpo'||k==='aov') ? (v=>v==null?'':'₹'+v.toFixed(2)) : (v=>v==null?'':f(v,'n'));
+      lineChart('yoyc_'+k, lbs, [
+        {label:'2025', color:'#94a3b8', data:cA.map(d=>d[k])},
+        {label:'2026', color:'#3b82f6', data:cB.map(d=>d[k])}
+      ], fmt, 170);
+    });
+  }
 }
 
 // ════════ ESCALATION % ════════
